@@ -129,11 +129,22 @@ def list_transactions(
         raise InvalidFilterValueError("minValueBtc must be <= maxValueBtc", {"minValueBtc": min_value_btc, "maxValueBtc": max_value_btc})
 
     # ML join
-    join_clause = "LEFT JOIN ml_results r ON t.transaction_id = r.entity_id AND t.dataset_id = r.dataset_id"
     join_params: List[Any] = []
     if analysis_id:
-        join_clause += " AND r.analysis_id = ?"
+        join_clause = "LEFT JOIN ml_results r ON t.transaction_id = r.entity_id AND t.dataset_id = r.dataset_id AND r.analysis_id = ?"
         join_params.append(analysis_id)
+    else:
+        join_clause = """
+        LEFT JOIN (
+            SELECT entity_id, dataset_id, risk_score, risk_level
+            FROM (
+                SELECT entity_id, dataset_id, risk_score, risk_level,
+                       ROW_NUMBER() OVER (PARTITION BY entity_id, dataset_id ORDER BY predicted_at DESC NULLS LAST, result_id DESC) as rn
+                FROM ml_results
+                WHERE entity_type = 'transaction'
+            ) sub WHERE rn = 1
+        ) r ON t.transaction_id = r.entity_id AND t.dataset_id = r.dataset_id
+        """
 
     all_params = join_params + where_params
     where_sql = " AND ".join(where_clauses)

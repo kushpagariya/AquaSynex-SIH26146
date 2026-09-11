@@ -24,12 +24,20 @@ def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
     with _lock:
         target_path = database_path or settings.DB_PATH
         settings.ensure_directories()
+        conn: Optional[duckdb.DuckDBPyConnection] = None
         try:
-            _connection = duckdb.connect(database=target_path)
-            run_migrations(_connection)
+            conn = duckdb.connect(database=target_path)
+            run_migrations(conn)
+            _connection = conn
             logger.info(f"Connected to DuckDB database at: {target_path}")
             return _connection
         except Exception as exc:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            _connection = None
             logger.error(f"Failed to initialize DuckDB at {target_path}: {exc}")
             raise DatabaseUnavailableError(f"Cannot access DuckDB at {target_path}: {exc}") from exc
 
@@ -37,9 +45,10 @@ def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
 def get_db_connection() -> duckdb.DuckDBPyConnection:
     """Get the active DuckDB connection, initializing if not already open."""
     global _connection
-    if _connection is None:
-        return init_db()
-    return _connection
+    with _lock:
+        if _connection is None:
+            return init_db()
+        return _connection
 
 
 def close_db() -> None:

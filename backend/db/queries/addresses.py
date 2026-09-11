@@ -73,11 +73,22 @@ def list_addresses(
         where_clauses.append("r.risk_score <= ?")
         where_params.append(max_risk_score)
 
-    join_clause = "LEFT JOIN ml_results r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id"
     join_params: List[Any] = []
     if analysis_id:
-        join_clause += " AND r.analysis_id = ?"
+        join_clause = "LEFT JOIN ml_results r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id AND r.analysis_id = ?"
         join_params.append(analysis_id)
+    else:
+        join_clause = """
+        LEFT JOIN (
+            SELECT entity_id, dataset_id, risk_score, risk_level
+            FROM (
+                SELECT entity_id, dataset_id, risk_score, risk_level,
+                       ROW_NUMBER() OVER (PARTITION BY entity_id, dataset_id ORDER BY predicted_at DESC NULLS LAST, result_id DESC) as rn
+                FROM ml_results
+                WHERE entity_type = 'address'
+            ) sub WHERE rn = 1
+        ) r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id
+        """
 
     all_params = join_params + where_params
     where_sql = " AND ".join(where_clauses)

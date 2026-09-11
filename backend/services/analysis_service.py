@@ -11,6 +11,7 @@ from backend.db.connection import get_db_lock
 from backend.db.queries import analyses as analysis_queries
 from backend.db.queries import datasets as dataset_queries
 from backend.schemas.analyses import AnalysisConfigSchema
+from backend.services.model_service import is_model_available
 from backend.services.pipeline_service import PipelineService
 from backend.utils.errors import (
     DatasetAnalysisRunningError,
@@ -51,36 +52,28 @@ class AnalysisService:
                 details={"datasetId": dataset_id, "status": dataset["status"]},
             )
 
-        # Check if an analysis is already running or pending on this dataset
-        running_res = self.conn.execute(
-            "SELECT COUNT(*) FROM analysis_runs WHERE dataset_id = ? AND status IN ('pending', 'running')",
-            [dataset_id],
-        ).fetchone()
-        if running_res and running_res[0] > 0:
-            raise DatasetAnalysisRunningError(
-                f"An analysis is already running or pending on dataset '{dataset_id}'",
-                details={"datasetId": dataset_id},
-            )
-
         chosen_model_id = model_id or settings.DEFAULT_MODEL_ID
         chosen_model_version = model_version or settings.DEFAULT_MODEL_VERSION
 
-        # Validate model_id against registered models / model directories
-        valid_models = {settings.DEFAULT_MODEL_ID}
-        models_dir = Path(settings.MODELS_DIR)
-        if models_dir.exists():
-            for p in models_dir.iterdir():
-                if p.is_dir():
-                    valid_models.add(p.name)
-
-        if chosen_model_id not in valid_models:
+        # Validate model against registered/available models
+        if not is_model_available(chosen_model_id, chosen_model_version):
             raise ModelNotFoundError(model_id=chosen_model_id, version=chosen_model_version)
 
         analysis_id = str(uuid.uuid4())
         config_obj = AnalysisConfigSchema(**(config_dict or {}))
 
-        # Insert analysis record with status='pending' under lock
+        # Check for concurrent running analysis and insert pending record atomically under lock
         with get_db_lock():
+            running_res = self.conn.execute(
+                "SELECT COUNT(*) FROM analysis_runs WHERE dataset_id = ? AND status IN ('pending', 'running')",
+                [dataset_id],
+            ).fetchone()
+            if running_res and running_res[0] > 0:
+                raise DatasetAnalysisRunningError(
+                    f"An analysis is already running or pending on dataset '{dataset_id}'",
+                    details={"datasetId": dataset_id},
+                )
+
             analysis_queries.insert_analysis_run(
                 conn=self.conn,
                 analysis_id=analysis_id,

@@ -1,6 +1,6 @@
 """Dataset and dataset-analysis routes."""
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, Response, UploadFile, status
 from backend.dependencies import get_analysis_service, get_dataset_service
 from backend.schemas.analyses import AnalysisRequest, AnalysisSummary, AnalysisTriggerResponse
@@ -37,7 +37,7 @@ def list_datasets(
 
 
 @router.post("/datasets/upload", response_model=ApiResponse[DatasetUploadResponse], status_code=status.HTTP_202_ACCEPTED)
-async def upload_dataset(
+def upload_dataset(
     file: UploadFile = File(..., description="Dataset file (CSV, JSON, JSONL, Parquet)"),
     name: str = Form(..., description="User-provided dataset name"),
     dataset_service: DatasetService = Depends(get_dataset_service),
@@ -78,16 +78,16 @@ def get_dataset_detail(
     )
 
 
-@router.delete("/datasets/{datasetId}", response_model=ApiResponse[DatasetDeleteResponse])
+@router.delete("/datasets/{datasetId}", response_model=ApiResponse[Dict[str, Any]])
 def delete_dataset(
     datasetId: str,
     dataset_service: DatasetService = Depends(get_dataset_service),
-) -> ApiResponse[DatasetDeleteResponse]:
-    """Delete a dataset and all associated analysis records."""
-    deleted = dataset_service.delete_dataset(datasetId)
+) -> ApiResponse[Dict[str, Any]]:
+    """Delete a dataset and all associated data."""
+    dataset_service.delete_dataset(datasetId)
     return ApiResponse(
         success=True,
-        data=DatasetDeleteResponse(deleted=deleted),
+        data={"datasetId": datasetId, "deleted": True},
         meta=ApiMeta(),
     )
 
@@ -105,7 +105,7 @@ def trigger_analysis(
         dataset_id=datasetId,
         model_id=req.model_id,
         model_version=req.model_version,
-        config_dict=req.config,
+        config_dict=req.config.model_dump() if req.config else None,
         background_tasks=background_tasks,
     )
     return ApiResponse(

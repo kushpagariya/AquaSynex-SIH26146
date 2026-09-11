@@ -16,7 +16,7 @@ from typing import Optional, Union
 SATOSHIS_PER_BTC = 100_000_000
 
 
-def satoshi_to_btc_str(satoshi: Optional[Union[int, float]]) -> Optional[str]:
+def satoshi_to_btc_str(satoshi: Optional[Union[int, float, str, Decimal]]) -> Optional[str]:
     """Convert satoshi integer to 8-decimal BTC string for API responses.
 
     Examples:
@@ -26,9 +26,16 @@ def satoshi_to_btc_str(satoshi: Optional[Union[int, float]]) -> Optional[str]:
     """
     if satoshi is None:
         return None
-    
-    # Use Decimal for forensic precision
-    dec_sat = Decimal(str(int(satoshi)))
+
+    try:
+        dec = Decimal(str(satoshi).strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"Invalid satoshi amount representation: {satoshi}") from exc
+
+    if dec != dec.to_integral_value():
+        raise ValueError(f"Satoshi value must be an integer, got: {satoshi}")
+
+    dec_sat = dec.to_integral_value()
     dec_btc = dec_sat / Decimal(SATOSHIS_PER_BTC)
     return f"{dec_btc:.8f}"
 
@@ -46,8 +53,11 @@ def btc_str_to_satoshi(btc_val: Optional[Union[str, int, float, Decimal]]) -> in
     if isinstance(btc_val, (int, float, str, Decimal)):
         try:
             dec_btc = Decimal(str(btc_val).strip())
-            return int((dec_btc * Decimal(SATOSHIS_PER_BTC)).to_integral_value())
-        except (InvalidOperation, ValueError) as exc:
+            prod = dec_btc * Decimal(SATOSHIS_PER_BTC)
+            if prod != prod.to_integral_value():
+                raise ValueError(f"Sub-satoshi precision is not supported: {btc_val}")
+            return int(prod.to_integral_value())
+        except InvalidOperation as exc:
             raise ValueError(f"Invalid BTC amount representation: {btc_val}") from exc
 
     raise TypeError(f"Unsupported type for BTC conversion: {type(btc_val)}")

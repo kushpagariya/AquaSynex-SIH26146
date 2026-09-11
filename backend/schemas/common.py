@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 import uuid
 from typing import Any, Dict, Generic, Optional, TypeVar
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def to_camel(snake_str: str) -> str:
@@ -51,3 +51,11 @@ class ApiResponse(CamelModel, Generic[T]):
     data: Optional[T] = None
     error: Optional[ApiError] = None
     meta: ApiMeta = Field(default_factory=ApiMeta)
+
+    @model_validator(mode="after")
+    def validate_envelope(self) -> "ApiResponse[T]":
+        if self.success and self.error is not None:
+            raise ValueError("Successful response must not contain an error")
+        if not self.success and self.error is None:
+            raise ValueError("Failed response must contain an error")
+        return self

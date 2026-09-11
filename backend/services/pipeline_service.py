@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 import uuid
 import duckdb
 from backend.config import settings
+from backend.db.connection import get_db_lock
 from backend.db.queries import results as result_queries
 from backend.schemas.analyses import AnalysisConfigSchema
 from backend.utils.errors import (
@@ -105,13 +106,44 @@ class PipelineService:
                 logger.error(f"ML Pipeline execution failed: {exc}")
                 raise MLError(f"ML pipeline execution error: {exc}") from exc
 
-        # Validate and persist results to DuckDB
+        # 1. Validate all items before persisting any item
         for item in ml_results:
             self._validate_ml_result(item)
-            self._persist_result(dataset_id, analysis_id, model_id, model_version, item)
+
+        # 2. Persist in a database transaction with rollback on failure
+        with get_db_lock():
+            self.conn.execute("BEGIN TRANSACTION")
+            try:
+                for item in ml_results:
+                    self._persist_result(dataset_id, analysis_id, model_id, model_version, item)
+                self.conn.execute("COMMIT")
+            except Exception as exc:
+                self.conn.execute("ROLLBACK")
+                logger.error(f"Failed to persist ML results for analysis {analysis_id}: {exc}")
+                raise MLError(f"Failed to persist ML results: {exc}") from exc
 
         logger.info(f"Persisted {len(ml_results)} ML results for analysis {analysis_id}")
         return ml_results
+
+    def _as_score(self, name: str, value: Any, required: bool = True) -> Optional[float]:
+        """Safely convert and validate a score between 0.0 and 1.0, raising MLError on failure."""
+        if value is None:
+            if required:
+                raise MLError(f"MLResult invariant violation: '{name}' is required")
+            return None
+
+        try:
+            val = float(value)
+        except (ValueError, TypeError) as exc:
+            raise MLError(
+                f"MLResult invariant violation: '{name}' must be numeric, got {value}"
+            ) from exc
+
+        if not (0.0 <= val <= 1.0):
+            raise MLError(
+                f"MLResult invariant violation: '{name}' must be between 0.0 and 1.0, got {val}"
+            )
+        return val
 
     def _validate_ml_result(self, result: Dict[str, Any]) -> None:
         """Validate that an MLResult item conforms to the documented ML contract."""
@@ -125,17 +157,8 @@ class PipelineService:
                 f"MLResult invariant violation: 'entity_type' must be 'transaction' or 'address', got '{entity_type}'"
             )
 
-        anomaly_score = result.get("anomaly_score")
-        if anomaly_score is None or not (0.0 <= float(anomaly_score) <= 1.0):
-            raise MLError(
-                f"MLResult invariant violation: 'anomaly_score' must be between 0.0 and 1.0, got {anomaly_score}"
-            )
-
-        risk_score = result.get("risk_score")
-        if risk_score is None or not (0.0 <= float(risk_score) <= 1.0):
-            raise MLError(
-                f"MLResult invariant violation: 'risk_score' must be between 0.0 and 1.0, got {risk_score}"
-            )
+        self._as_score("anomaly_score", result.get("anomaly_score"), required=True)
+        self._as_score("risk_score", result.get("risk_score"), required=True)
 
         risk_level = result.get("risk_level")
         if risk_level not in ("low", "medium", "high", "critical"):
@@ -143,11 +166,7 @@ class PipelineService:
                 f"MLResult invariant violation: 'risk_level' must be one of low/medium/high/critical, got '{risk_level}'"
             )
 
-        confidence = result.get("confidence")
-        if confidence is not None and not (0.0 <= float(confidence) <= 1.0):
-            raise MLError(
-                f"MLResult invariant violation: 'confidence' must be between 0.0 and 1.0, got {confidence}"
-            )
+        self._as_score("confidence", result.get("confidence"), required=False)
 
     def _persist_result(
         self,

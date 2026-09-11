@@ -22,14 +22,25 @@ from backend.utils.logging import logger
 
 ALLOWED_FORMATS = {
     ".csv": "csv",
+    ".parquet": "parquet",
     ".json": "json",
     ".jsonl": "jsonl",
-    ".parquet": "parquet",
 }
 
 
+def escape_sql_literal(val: Any) -> str:
+    """Escape a Python value for use as a SQL string literal by doubling single quotes."""
+    return str(val).replace("'", "''")
+
+
+def escape_sql_identifier(identifier: str) -> str:
+    """Escape a column/table name for use as a SQL quoted identifier by doubling double quotes."""
+    escaped = identifier.replace('"', '""')
+    return f'"{escaped}"'
+
+
 class DatasetService:
-    """Service handling dataset lifecycle, validation, storage, and ingestion."""
+    """Service managing dataset upload, validation, ingestion, and deletion."""
 
     def __init__(self, conn: duckdb.DuckDBPyConnection):
         self.conn = conn
@@ -48,6 +59,11 @@ class DatasetService:
         safe_filename = Path(filename).name
         if not safe_filename or safe_filename in (".", ".."):
             raise ValidationError("Invalid file name", details={"field": "filename", "provided": filename})
+
+        import urllib.parse
+        unescaped_filename = urllib.parse.unquote(safe_filename)
+        if any(c in safe_filename or c in unescaped_filename for c in ("'", '"', '`')):
+            raise ValidationError("Filename must not contain quotes", details={"field": "filename", "provided": filename})
 
         ext = Path(safe_filename).suffix.lower()
         if ext not in ALLOWED_FORMATS:
@@ -99,25 +115,25 @@ class DatasetService:
         try:
             self._ingest_file(dataset_id, dest_path, format_str)
         except Exception as exc:
-            logger.error(f"Failed to ingest dataset {dataset_id}: {exc}")
-            # Clean up any partial data written for this dataset to maintain consistency
+            logger.error(f"Ingestion failed for dataset {dataset_id}: {exc}")
+            # Rollback partially ingested rows for this dataset
             try:
-                self.conn.execute("DELETE FROM addresses WHERE dataset_id = ?", [dataset_id])
-                self.conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
                 self.conn.execute("DELETE FROM transaction_inputs WHERE dataset_id = ?", [dataset_id])
+                self.conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
                 self.conn.execute("DELETE FROM transactions WHERE dataset_id = ?", [dataset_id])
-            except Exception as clean_exc:
-                logger.warning(f"Error during partial ingestion cleanup: {clean_exc}")
+                self.conn.execute("DELETE FROM addresses WHERE dataset_id = ?", [dataset_id])
+            except Exception as rollback_exc:
+                logger.warning(f"Failed to rollback partial ingestion records: {rollback_exc}")
 
-            dataset_queries.update_dataset(
-                self.conn,
-                dataset_id,
+            dataset_queries.update_dataset_status(
+                conn=self.conn,
+                dataset_id=dataset_id,
                 status="error",
                 error_message=str(exc),
             )
-            raise DatasetError(f"Error processing dataset: {exc}") from exc
+            raise DatasetError(f"Failed to process dataset file: {exc}", details={"error": str(exc)}) from exc
 
-        return dataset_queries.get_dataset_by_id(self.conn, dataset_id)
+        return dataset
 
     def _ingest_file(self, dataset_id: str, file_path: Path, format_str: str) -> None:
         """Parse raw file, detect fields, and normalize records into canonical tables."""
@@ -125,12 +141,13 @@ class DatasetService:
 
         # Load data using DuckDB analytical scanner
         temp_view = f"temp_upload_{dataset_id.replace('-', '_')}"
+        safe_file_path = escape_sql_literal(file_path)
         if format_str == "csv":
-            self.conn.execute(f"CREATE OR REPLACE VIEW {temp_view} AS SELECT * FROM read_csv_auto('{file_path}')")
+            self.conn.execute(f"CREATE OR REPLACE VIEW {temp_view} AS SELECT * FROM read_csv_auto('{safe_file_path}')")
         elif format_str == "parquet":
-            self.conn.execute(f"CREATE OR REPLACE VIEW {temp_view} AS SELECT * FROM read_parquet('{file_path}')")
+            self.conn.execute(f"CREATE OR REPLACE VIEW {temp_view} AS SELECT * FROM read_parquet('{safe_file_path}')")
         elif format_str in ["json", "jsonl"]:
-            self.conn.execute(f"CREATE OR REPLACE VIEW {temp_view} AS SELECT * FROM read_json_auto('{file_path}')")
+            self.conn.execute(f"CREATE OR REPLACE VIEW {temp_view} AS SELECT * FROM read_json_auto('{safe_file_path}')")
 
         # Inspect available columns
         sample_rel = self.conn.execute(f"SELECT * FROM {temp_view} LIMIT 0")
@@ -151,18 +168,19 @@ class DatasetService:
             # Fallback: if no tx column, generate row hash or UUID surrogate
             tx_col_expr = "CAST(uuid() AS VARCHAR)"
         else:
-            tx_col_expr = f'CAST("{tx_col}" AS VARCHAR)'
+            tx_col_expr = f'CAST({escape_sql_identifier(tx_col)} AS VARCHAR)'
 
         # Timestamp normalization: supports unix epochs (seconds / ms) and ISO timestamps
         if time_col:
+            time_col_ident = escape_sql_identifier(time_col)
             timestamp_expr = f"""
             CASE 
-                WHEN "{time_col}" IS NULL THEN NULL
-                WHEN TRY_CAST("{time_col}" AS BIGINT) IS NOT NULL AND TRY_CAST("{time_col}" AS BIGINT) > 100000000000
-                    THEN to_timestamp(TRY_CAST("{time_col}" AS DOUBLE) / 1000.0)
-                WHEN TRY_CAST("{time_col}" AS BIGINT) IS NOT NULL AND TRY_CAST("{time_col}" AS BIGINT) BETWEEN 1230940800 AND 3000000000
-                    THEN to_timestamp(TRY_CAST("{time_col}" AS BIGINT))
-                ELSE TRY_CAST("{time_col}" AS TIMESTAMPTZ)
+                WHEN {time_col_ident} IS NULL THEN NULL
+                WHEN TRY_CAST({time_col_ident} AS BIGINT) IS NOT NULL AND TRY_CAST({time_col_ident} AS BIGINT) > 100000000000
+                    THEN to_timestamp(TRY_CAST({time_col_ident} AS DOUBLE) / 1000.0)
+                WHEN TRY_CAST({time_col_ident} AS BIGINT) IS NOT NULL AND TRY_CAST({time_col_ident} AS BIGINT) BETWEEN 1230940800 AND 3000000000
+                    THEN to_timestamp(TRY_CAST({time_col_ident} AS BIGINT))
+                ELSE TRY_CAST({time_col_ident} AS TIMESTAMPTZ)
             END
             """
         else:
@@ -170,44 +188,49 @@ class DatasetService:
 
         # Value normalization: preserves satoshi precision for both BTC float/string and satoshi integer
         if val_col:
+            val_col_ident = escape_sql_identifier(val_col)
+            val_col_lit = escape_sql_literal(val_col)
             val_expr = f"""
             CASE 
-                WHEN "{val_col}" IS NULL THEN NULL
-                WHEN LOWER('{val_col}') LIKE '%sat%' THEN TRY_CAST("{val_col}" AS BIGINT)
-                WHEN LOWER('{val_col}') LIKE '%btc%' THEN CAST(ROUND(TRY_CAST("{val_col}" AS DOUBLE) * 100000000) AS BIGINT)
-                WHEN CAST("{val_col}" AS VARCHAR) LIKE '%.%' 
-                     OR CAST("{val_col}" AS VARCHAR) LIKE '%e-%' 
-                     OR CAST("{val_col}" AS VARCHAR) LIKE '%E-%'
-                THEN CAST(ROUND(TRY_CAST("{val_col}" AS DOUBLE) * 100000000) AS BIGINT)
-                ELSE TRY_CAST("{val_col}" AS BIGINT)
+                WHEN {val_col_ident} IS NULL THEN NULL
+                WHEN LOWER('{val_col_lit}') LIKE '%sat%' THEN TRY_CAST({val_col_ident} AS BIGINT)
+                WHEN LOWER('{val_col_lit}') LIKE '%btc%' THEN CAST(ROUND(TRY_CAST({val_col_ident} AS DOUBLE) * 100000000) AS BIGINT)
+                WHEN CAST({val_col_ident} AS VARCHAR) LIKE '%.%' 
+                     OR CAST({val_col_ident} AS VARCHAR) LIKE '%e-%' 
+                     OR CAST({val_col_ident} AS VARCHAR) LIKE '%E-%'
+                THEN CAST(ROUND(TRY_CAST({val_col_ident} AS DOUBLE) * 100000000) AS BIGINT)
+                ELSE TRY_CAST({val_col_ident} AS BIGINT)
             END
             """
         else:
             val_expr = "NULL"
 
         if fee_col:
+            fee_col_ident = escape_sql_identifier(fee_col)
+            fee_col_lit = escape_sql_literal(fee_col)
             fee_expr = f"""
             CASE 
-                WHEN "{fee_col}" IS NULL THEN NULL
-                WHEN LOWER('{fee_col}') LIKE '%sat%' THEN TRY_CAST("{fee_col}" AS BIGINT)
-                WHEN LOWER('{fee_col}') LIKE '%btc%' THEN CAST(ROUND(TRY_CAST("{fee_col}" AS DOUBLE) * 100000000) AS BIGINT)
-                WHEN CAST("{fee_col}" AS VARCHAR) LIKE '%.%' 
-                     OR CAST("{fee_col}" AS VARCHAR) LIKE '%e-%' 
-                     OR CAST("{fee_col}" AS VARCHAR) LIKE '%E-%'
-                THEN CAST(ROUND(TRY_CAST("{fee_col}" AS DOUBLE) * 100000000) AS BIGINT)
-                ELSE TRY_CAST("{fee_col}" AS BIGINT)
+                WHEN {fee_col_ident} IS NULL THEN NULL
+                WHEN LOWER('{fee_col_lit}') LIKE '%sat%' THEN TRY_CAST({fee_col_ident} AS BIGINT)
+                WHEN LOWER('{fee_col_lit}') LIKE '%btc%' THEN CAST(ROUND(TRY_CAST({fee_col_ident} AS DOUBLE) * 100000000) AS BIGINT)
+                WHEN CAST({fee_col_ident} AS VARCHAR) LIKE '%.%' 
+                     OR CAST({fee_col_ident} AS VARCHAR) LIKE '%e-%' 
+                     OR CAST({fee_col_ident} AS VARCHAR) LIKE '%E-%'
+                THEN CAST(ROUND(TRY_CAST({fee_col_ident} AS DOUBLE) * 100000000) AS BIGINT)
+                ELSE TRY_CAST({fee_col_ident} AS BIGINT)
             END
             """
         else:
             fee_expr = "NULL"
 
-        block_expr = f'TRY_CAST("{block_height_col}" AS INTEGER)' if block_height_col else "NULL"
+        block_expr = f'TRY_CAST({escape_sql_identifier(block_height_col)} AS INTEGER)' if block_height_col else "NULL"
 
         if label_col:
+            label_col_ident = escape_sql_identifier(label_col)
             label_expr = f"""
             CASE 
-                WHEN CAST("{label_col}" AS VARCHAR) IN ('1', 'illicit', 'ILLICIT', 'true', 'True') THEN 'illicit'
-                WHEN CAST("{label_col}" AS VARCHAR) IN ('0', 'licit', 'LICIT', 'legitimate', 'false', 'False') THEN 'licit'
+                WHEN CAST({label_col_ident} AS VARCHAR) IN ('1', 'illicit', 'ILLICIT', 'true', 'True') THEN 'illicit'
+                WHEN CAST({label_col_ident} AS VARCHAR) IN ('0', 'licit', 'LICIT', 'legitimate', 'false', 'False') THEN 'licit'
                 ELSE 'unknown'
             END
             """
@@ -259,6 +282,7 @@ class DatasetService:
             available_fields.append("label")
 
         if out_addr_col:
+            out_addr_ident = escape_sql_identifier(out_addr_col)
             available_fields.append("outputAddress")
             insert_out_sql = f"""
             INSERT OR REPLACE INTO transaction_outputs (
@@ -270,15 +294,16 @@ class DatasetService:
                 {tx_col_expr} AS transaction_id,
                 '{dataset_id}' AS dataset_id,
                 0 AS output_index,
-                CAST("{out_addr_col}" AS VARCHAR) AS output_address,
+                CAST({out_addr_ident} AS VARCHAR) AS output_address,
                 {val_expr} AS output_value_satoshi,
                 FALSE AS is_spent
             FROM {temp_view}
-            WHERE "{out_addr_col}" IS NOT NULL
+            WHERE {out_addr_ident} IS NOT NULL
             """
             self.conn.execute(insert_out_sql)
 
         if in_addr_col:
+            in_addr_ident = escape_sql_identifier(in_addr_col)
             available_fields.append("inputAddress")
             insert_in_sql = f"""
             INSERT OR REPLACE INTO transaction_inputs (
@@ -290,10 +315,10 @@ class DatasetService:
                 {tx_col_expr} AS transaction_id,
                 '{dataset_id}' AS dataset_id,
                 0 AS input_index,
-                CAST("{in_addr_col}" AS VARCHAR) AS input_address,
+                CAST({in_addr_ident} AS VARCHAR) AS input_address,
                 {val_expr} AS input_value_satoshi
             FROM {temp_view}
-            WHERE "{in_addr_col}" IS NOT NULL
+            WHERE {in_addr_ident} IS NOT NULL
             """
             self.conn.execute(insert_in_sql)
 

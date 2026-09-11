@@ -17,7 +17,7 @@ class AnalysisConfigSchema(CamelModel):
 class AnalysisRequest(CamelModel):
     model_id: Optional[str] = None
     model_version: Optional[str] = None
-    config: Optional[Dict[str, Any]] = None
+    config: Optional[AnalysisConfigSchema] = None
 
 
 class AnalysisSummary(CamelModel):

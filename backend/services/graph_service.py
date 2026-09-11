@@ -97,30 +97,47 @@ class GraphService:
 
         # Query edges connecting addresses
         # An edge exists between input_address and output_address in the same transaction
-        edge_query = """
-        SELECT 
-            i.input_address AS source,
-            o.output_address AS target,
-            t.transaction_id,
-            o.output_value_satoshi AS value_satoshi,
-            t.timestamp
-        FROM transaction_inputs i
-        JOIN transaction_outputs o ON i.transaction_id = o.transaction_id AND i.dataset_id = o.dataset_id
-        JOIN transactions t ON i.transaction_id = t.transaction_id AND i.dataset_id = t.dataset_id
-        WHERE i.dataset_id = ?
-          AND i.input_address IS NOT NULL
-          AND o.output_address IS NOT NULL
-          AND i.input_address != o.output_address
-        """
-        edge_params = [dataset_id]
+        if not selected_address_ids:
+            raw_edges = []
+        else:
+            selected_list = list(selected_address_ids)
+            addr_placeholders = ", ".join("?" for _ in selected_list)
+            edge_params = [dataset_id]
 
-        if not include_neighbors and selected_address_ids:
-            # Only edges where both source and target are in selected_address_ids
-            addr_list_str = ", ".join(f"'{a}'" for a in selected_address_ids)
-            edge_query += f" AND i.input_address IN ({addr_list_str}) AND o.output_address IN ({addr_list_str})"
+            if include_neighbors:
+                edge_condition = f"AND (i.input_address IN ({addr_placeholders}) OR o.output_address IN ({addr_placeholders}))"
+                edge_params.extend(selected_list)
+                edge_params.extend(selected_list)
+            else:
+                edge_condition = f"AND i.input_address IN ({addr_placeholders}) AND o.output_address IN ({addr_placeholders})"
+                edge_params.extend(selected_list)
+                edge_params.extend(selected_list)
 
-        edge_rel = self.conn.execute(edge_query, edge_params)
-        raw_edges = edge_rel.fetchall()
+            edge_query = f"""
+            SELECT 
+                i.input_address AS source,
+                o.output_address AS target,
+                t.transaction_id,
+                o.output_value_satoshi AS value_satoshi,
+                t.timestamp
+            FROM (
+                SELECT DISTINCT transaction_id, dataset_id, input_address
+                FROM transaction_inputs
+                WHERE input_address IS NOT NULL
+            ) i
+            JOIN (
+                SELECT transaction_id, dataset_id, output_address, SUM(output_value_satoshi) AS output_value_satoshi
+                FROM transaction_outputs
+                WHERE output_address IS NOT NULL
+                GROUP BY transaction_id, dataset_id, output_address
+            ) o ON i.transaction_id = o.transaction_id AND i.dataset_id = o.dataset_id
+            JOIN transactions t ON i.transaction_id = t.transaction_id AND i.dataset_id = t.dataset_id
+            WHERE i.dataset_id = ?
+              AND i.input_address != o.output_address
+              {edge_condition}
+            """
+            edge_rel = self.conn.execute(edge_query, edge_params)
+            raw_edges = edge_rel.fetchall()
 
         # Aggregate raw transactions into directed edges
         edges_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
@@ -170,6 +187,16 @@ class GraphService:
                 "timestamp": ts.isoformat() if ts else None,
             })
 
+        # Apply max_nodes limit after neighbor expansion
+        if len(nodes_dict) > max_nodes:
+            kept_nodes = set(list(selected_address_ids)[:max_nodes])
+            for k in nodes_dict:
+                if len(kept_nodes) >= max_nodes:
+                    break
+                kept_nodes.add(k)
+            nodes_dict = {k: nodes_dict[k] for k in kept_nodes}
+            edges_map = {k: v for k, v in edges_map.items() if k[0] in kept_nodes and k[1] in kept_nodes}
+
         edges_list = []
         for edge_data in edges_map.values():
             edge_data["totalValueBtc"] = satoshi_to_btc_str(edge_data["totalValueSatoshi"])
@@ -200,28 +227,42 @@ class GraphService:
 
         dataset_id = None
         if analysis_id:
-            try:
-                analysis = analysis_queries.get_analysis_by_id(self.conn, analysis_id)
-                dataset_id = analysis.get("dataset_id")
-            except Exception:
-                pass
+            analysis = analysis_queries.get_analysis_by_id(self.conn, analysis_id)
+            dataset_id = analysis.get("dataset_id")
 
-        if not dataset_id:
+        if dataset_id:
+            # Verify address exists in this dataset
+            addr_row = self.conn.execute(
+                "SELECT 1 FROM addresses WHERE address_id = ? AND dataset_id = ? "
+                "UNION ALL SELECT 1 FROM transaction_inputs WHERE input_address = ? AND dataset_id = ? "
+                "UNION ALL SELECT 1 FROM transaction_outputs WHERE output_address = ? AND dataset_id = ? LIMIT 1",
+                [address_id, dataset_id, address_id, dataset_id, address_id, dataset_id],
+            ).fetchone()
+            if not addr_row:
+                raise GraphNotAvailableError(
+                    f"Address '{address_id}' not found in dataset '{dataset_id}' for analysis '{analysis_id}'."
+                )
+        else:
             # Find which dataset contains this address
             addr_row = self.conn.execute(
                 "SELECT dataset_id FROM addresses WHERE address_id = ? LIMIT 1", [address_id]
             ).fetchone()
             dataset_id = addr_row[0] if addr_row else None
 
-        if not dataset_id:
-            # Check transaction inputs/outputs if not in addresses table
-            in_row = self.conn.execute(
-                "SELECT dataset_id FROM transaction_inputs WHERE input_address = ? LIMIT 1", [address_id]
-            ).fetchone()
-            dataset_id = in_row[0] if in_row else None
+            if not dataset_id:
+                in_row = self.conn.execute(
+                    "SELECT dataset_id FROM transaction_inputs WHERE input_address = ? LIMIT 1", [address_id]
+                ).fetchone()
+                dataset_id = in_row[0] if in_row else None
 
-        if not dataset_id:
-            raise GraphNotAvailableError(f"Address '{address_id}' not found in any dataset.")
+            if not dataset_id:
+                out_row = self.conn.execute(
+                    "SELECT dataset_id FROM transaction_outputs WHERE output_address = ? LIMIT 1", [address_id]
+                ).fetchone()
+                dataset_id = out_row[0] if out_row else None
+
+            if not dataset_id:
+                raise GraphNotAvailableError(f"Address '{address_id}' not found in any dataset.")
 
         # Batch breadth-first search for N-hop neighbors
         visited_nodes: Set[str] = {address_id}
@@ -231,14 +272,15 @@ class GraphService:
             if not current_frontier or len(visited_nodes) >= 500:
                 break
 
-            frontier_str = ", ".join(f"'{a}'" for a in current_frontier)
+            frontier_list = list(current_frontier)
+            frontier_placeholders = ", ".join("?" for _ in frontier_list)
 
             # Batch query next hop neighbors (forward and backward)
             fwd_sql = f"""
             SELECT DISTINCT o.output_address
             FROM transaction_inputs i
             JOIN transaction_outputs o ON i.transaction_id = o.transaction_id AND i.dataset_id = o.dataset_id
-            WHERE i.dataset_id = ? AND i.input_address IN ({frontier_str}) 
+            WHERE i.dataset_id = ? AND i.input_address IN ({frontier_placeholders}) 
               AND o.output_address IS NOT NULL
             LIMIT 100
             """
@@ -246,19 +288,23 @@ class GraphService:
             SELECT DISTINCT i.input_address
             FROM transaction_outputs o
             JOIN transaction_inputs i ON o.transaction_id = i.transaction_id AND o.dataset_id = i.dataset_id
-            WHERE o.dataset_id = ? AND o.output_address IN ({frontier_str}) 
+            WHERE o.dataset_id = ? AND o.output_address IN ({frontier_placeholders}) 
               AND i.input_address IS NOT NULL
             LIMIT 100
             """
-            fwd_rows = self.conn.execute(fwd_sql, [dataset_id]).fetchall()
-            bwd_rows = self.conn.execute(bwd_sql, [dataset_id]).fetchall()
+            fwd_rows = self.conn.execute(fwd_sql, [dataset_id] + frontier_list).fetchall()
+            bwd_rows = self.conn.execute(bwd_sql, [dataset_id] + frontier_list).fetchall()
 
             next_frontier: Set[str] = set()
             for (nbr,) in fwd_rows:
+                if len(visited_nodes) >= 500:
+                    break
                 if nbr not in visited_nodes:
                     visited_nodes.add(nbr)
                     next_frontier.add(nbr)
             for (nbr,) in bwd_rows:
+                if len(visited_nodes) >= 500:
+                    break
                 if nbr not in visited_nodes:
                     visited_nodes.add(nbr)
                     next_frontier.add(nbr)
@@ -266,19 +312,38 @@ class GraphService:
             current_frontier = next_frontier
 
         # Retrieve nodes detail in a single batch query
-        visited_str = ", ".join(f"'{a}'" for a in visited_nodes)
-        ml_join = "AND r.analysis_id = ?" if analysis_id else ""
-        ml_params = [analysis_id, dataset_id] if analysis_id else [dataset_id]
+        visited_list = list(visited_nodes)
+        visited_placeholders = ", ".join("?" for _ in visited_list)
+        if analysis_id:
+            node_sql = f"""
+            SELECT a.address_id, a.transaction_count, a.total_received_satoshi, a.total_sent_satoshi,
+                   a.first_seen_timestamp, a.last_seen_timestamp,
+                   r.risk_score, r.risk_level
+            FROM addresses a
+            LEFT JOIN ml_results r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id AND r.analysis_id = ?
+            WHERE a.address_id IN ({visited_placeholders}) AND a.dataset_id = ?
+            """
+            node_params = [analysis_id] + visited_list + [dataset_id]
+        else:
+            node_sql = f"""
+            SELECT a.address_id, a.transaction_count, a.total_received_satoshi, a.total_sent_satoshi,
+                   a.first_seen_timestamp, a.last_seen_timestamp,
+                   r.risk_score, r.risk_level
+            FROM addresses a
+            LEFT JOIN (
+                SELECT entity_id, dataset_id, risk_score, risk_level
+                FROM (
+                    SELECT entity_id, dataset_id, risk_score, risk_level,
+                           ROW_NUMBER() OVER (PARTITION BY entity_id, dataset_id ORDER BY predicted_at DESC NULLS LAST, result_id DESC) as rn
+                    FROM ml_results
+                    WHERE entity_type = 'address'
+                ) sub WHERE rn = 1
+            ) r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id
+            WHERE a.address_id IN ({visited_placeholders}) AND a.dataset_id = ?
+            """
+            node_params = visited_list + [dataset_id]
 
-        node_sql = f"""
-        SELECT a.address_id, a.transaction_count, a.total_received_satoshi, a.total_sent_satoshi,
-               a.first_seen_timestamp, a.last_seen_timestamp,
-               r.risk_score, r.risk_level
-        FROM addresses a
-        LEFT JOIN ml_results r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id {ml_join}
-        WHERE a.address_id IN ({visited_str}) AND a.dataset_id = ?
-        """
-        node_rel = self.conn.execute(node_sql, ml_params)
+        node_rel = self.conn.execute(node_sql, node_params)
         fetched_nodes = {row[0]: row for row in node_rel.fetchall()}
 
         nodes_dict: Dict[str, Dict[str, Any]] = {}
@@ -309,7 +374,7 @@ class GraphService:
             }
 
         # Query edges between visited nodes
-        addr_list_str = ", ".join(f"'{a}'" for a in visited_nodes)
+        edge_placeholders = ", ".join("?" for _ in visited_list)
         edge_query = f"""
         SELECT 
             i.input_address AS source,
@@ -317,15 +382,25 @@ class GraphService:
             t.transaction_id,
             o.output_value_satoshi AS value_satoshi,
             t.timestamp
-        FROM transaction_inputs i
-        JOIN transaction_outputs o ON i.transaction_id = o.transaction_id AND i.dataset_id = o.dataset_id
+        FROM (
+            SELECT DISTINCT transaction_id, dataset_id, input_address
+            FROM transaction_inputs
+            WHERE input_address IS NOT NULL
+        ) i
+        JOIN (
+            SELECT transaction_id, dataset_id, output_address, SUM(output_value_satoshi) AS output_value_satoshi
+            FROM transaction_outputs
+            WHERE output_address IS NOT NULL
+            GROUP BY transaction_id, dataset_id, output_address
+        ) o ON i.transaction_id = o.transaction_id AND i.dataset_id = o.dataset_id
         JOIN transactions t ON i.transaction_id = t.transaction_id AND i.dataset_id = t.dataset_id
         WHERE i.dataset_id = ?
-          AND i.input_address IN ({addr_list_str})
-          AND o.output_address IN ({addr_list_str})
+          AND i.input_address IN ({edge_placeholders})
+          AND o.output_address IN ({edge_placeholders})
           AND i.input_address != o.output_address
         """
-        edge_rel = self.conn.execute(edge_query, [dataset_id])
+        edge_params = [dataset_id] + visited_list + visited_list
+        edge_rel = self.conn.execute(edge_query, edge_params)
 
         edges_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
         for src, tgt, tx_id, val_sat, ts in edge_rel.fetchall():
