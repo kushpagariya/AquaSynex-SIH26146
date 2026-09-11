@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel"
-import { getDatasetInfo } from "@/data/service"
+import { getDatasetInfo, uploadAndAnalyzeDataset } from "@/data/service"
 import type { DatasetInfo, DatasetStage } from "@/data/types"
 import { formatDateTime, formatNumber, cn } from "@/lib/utils"
 
@@ -41,41 +41,36 @@ export function DatasetPage() {
   const [stage, setStage] = useState<DatasetStage>("idle")
   const [progress, setProgress] = useState(0)
   const [fileName, setFileName] = useState<string>("")
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    getDatasetInfo().then(setExisting)
+    getDatasetInfo().then(setExisting).catch(() => setExisting(null))
   }, [])
 
-  function simulateIngest(name: string) {
-    setFileName(name)
+  async function handleIngest(file: File) {
+    setFileName(file.name)
     setStage("uploading")
-    setProgress(0)
+    setProgress(10)
+    setErrorMsg(null)
 
-    let pct = 0
-    const upload = setInterval(() => {
-      pct += 8
-      setProgress(Math.min(pct, 100))
-      if (pct >= 100) {
-        clearInterval(upload)
-        setStage("processing")
-        setProgress(0)
-        let ppct = 0
-        const process = setInterval(() => {
-          ppct += 5
-          setProgress(Math.min(ppct, 100))
-          if (ppct >= 100) {
-            clearInterval(process)
-            setStage("completed")
-          }
-        }, 120)
-      }
-    }, 90)
+    try {
+      await uploadAndAnalyzeDataset(file, file.name, (s, pct) => {
+        setStage(s)
+        setProgress(pct)
+      })
+      const refreshed = await getDatasetInfo()
+      setExisting(refreshed)
+      setStage("completed")
+    } catch (err) {
+      setStage("failed")
+      setErrorMsg(err instanceof Error ? err.message : "Dataset ingestion failed")
+    }
   }
 
   function onFiles(files: FileList | null) {
-    if (files && files.length) simulateIngest(files[0].name)
+    if (files && files.length) handleIngest(files[0])
   }
 
   const active = stage !== "idle"
@@ -132,7 +127,7 @@ export function DatasetPage() {
                   <input
                     ref={inputRef}
                     type="file"
-                    accept=".csv,.json"
+                    accept=".csv,.json,.jsonl,.parquet"
                     className="hidden"
                     onChange={(e) => onFiles(e.target.files)}
                   />
@@ -142,7 +137,9 @@ export function DatasetPage() {
                   <div className="flex items-center gap-3">
                     <span className="grid size-10 place-items-center rounded-md border border-line bg-panel-2 text-accent">
                       {stage === "completed" ? (
-                        <FileCheck2 className="size-5" />
+                        <FileCheck2 className="size-5 text-risk-low" />
+                      ) : stage === "failed" ? (
+                        <span className="font-bold text-risk-critical">!</span>
                       ) : (
                         <Loader2 className="size-5 animate-spin" />
                       )}
@@ -151,22 +148,29 @@ export function DatasetPage() {
                       <p className="truncate font-mono-id text-sm text-fg">
                         {fileName}
                       </p>
-                      <p className="text-xs text-fg-subtle">
+                      <p className={cn("text-xs", stage === "failed" ? "text-risk-critical" : "text-fg-subtle")}>
                         {stageLabel[stage]}
-                        {stage !== "completed" ? ` — ${progress}%` : ""}
+                        {stage !== "completed" && stage !== "failed" ? ` — ${progress}%` : ""}
                       </p>
                     </div>
                   </div>
 
+                  {errorMsg ? (
+                    <div className="rounded border border-risk-critical/40 bg-risk-critical-soft p-3 text-xs text-risk-critical">
+                      {errorMsg}
+                    </div>
+                  ) : null}
+
                   <StageTracker stage={stage} progress={progress} />
 
-                  {stage === "completed" ? (
+                  {stage === "completed" || stage === "failed" ? (
                     <button
                       type="button"
                       onClick={() => {
                         setStage("idle")
                         setProgress(0)
                         setFileName("")
+                        setErrorMsg(null)
                       }}
                       className="text-xs font-medium text-accent hover:underline"
                     >

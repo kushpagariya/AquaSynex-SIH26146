@@ -41,22 +41,33 @@ export function InvestigationPage() {
   const navigate = useNavigate()
   const [data, setData] = useState<Investigation | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [selection, setSelection] = useState<GraphSelection | null>(null)
 
   useEffect(() => {
     if (!entityId) return
     setData(null)
     setNotFound(false)
+    setErrorMsg(null)
     setSelection(null)
-    getInvestigation(entityId).then((res) => {
-      if (res) setData(res)
-      else setNotFound(true)
-    })
+    getInvestigation(entityId)
+      .then((res) => {
+        if (res) setData(res)
+        else setNotFound(true)
+      })
+      .catch((err) => {
+        setErrorMsg(err instanceof Error ? err.message : "Failed to load investigation")
+      })
   }, [entityId])
 
   return (
     <AppLayout title="Investigation">
-      {notFound ? (
+      {errorMsg ? (
+        <ErrorState
+          title="Failed to load investigation"
+          description={errorMsg}
+        />
+      ) : notFound ? (
         <ErrorState
           title="Entity not found"
           description="This entity is not present in the loaded dataset."

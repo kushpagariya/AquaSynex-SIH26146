@@ -13,7 +13,7 @@ import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel"
 import { StatCard } from "@/components/stat-card"
 import { AnomalyOverview } from "@/components/anomaly-overview"
 import { AlertTable } from "@/components/alert-table"
-import { LoadingState } from "@/components/ui/states"
+import { ErrorState, LoadingState } from "@/components/ui/states"
 import { getAlerts, getDashboardStats } from "@/data/service"
 import type { Alert, DashboardStats } from "@/data/types"
 import { formatDateTime } from "@/lib/utils"
@@ -22,18 +22,47 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [alerts, setAlerts] = useState<Alert[] | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
-    getDashboardStats().then(setStats)
-    getAlerts().then(setAlerts)
+    Promise.all([getDashboardStats(), getAlerts()])
+      .then(([s, a]) => {
+        setStats(s)
+        setAlerts(a)
+      })
+      .catch((err) => {
+        setErrorMsg(err instanceof Error ? err.message : "Failed to connect to AquaSynex backend")
+      })
   }, [])
 
   return (
     <AppLayout title="Dashboard">
-      {!stats || !alerts ? (
+      {errorMsg ? (
+        <ErrorState
+          title="Backend Connection Error"
+          description={errorMsg}
+        />
+      ) : !stats || !alerts ? (
         <LoadingState label="Loading system overview" />
       ) : (
         <div className="space-y-6">
+          {stats.totalTransactions === 0 ? (
+            <div className="flex items-center justify-between rounded-lg border border-line bg-panel p-4">
+              <div>
+                <p className="text-sm font-semibold text-fg">No dataset loaded yet</p>
+                <p className="mt-0.5 text-xs text-fg-muted">
+                  Ingest a Bitcoin transaction dataset (CSV, JSON, Parquet) to run offline ML anomaly detection.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate("/dataset")}
+                className="rounded border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/10"
+              >
+                Go to Datasets →
+              </button>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Transactions"

@@ -14,7 +14,6 @@ import { SeverityBadge, severityColorVar } from "@/components/ui/badges"
 import { MonoId } from "@/components/ui/mono-id"
 import { LoadingState, ErrorState } from "@/components/ui/states"
 import { getTransaction } from "@/data/service"
-import { entityById } from "@/data/mock"
 import type { Transaction, TxIO } from "@/data/types"
 import { formatBtc, formatDateTime, formatNumber } from "@/lib/utils"
 
@@ -23,20 +22,31 @@ export function TransactionPage() {
   const navigate = useNavigate()
   const [tx, setTx] = useState<Transaction | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (!txid) return
     setTx(null)
     setNotFound(false)
-    getTransaction(txid).then((res) => {
-      if (res) setTx(res)
-      else setNotFound(true)
-    })
+    setErrorMsg(null)
+    getTransaction(txid)
+      .then((res) => {
+        if (res) setTx(res)
+        else setNotFound(true)
+      })
+      .catch((err) => {
+        setErrorMsg(err instanceof Error ? err.message : "Failed to load transaction")
+      })
   }, [txid])
 
   return (
     <AppLayout title="Transaction">
-      {notFound ? (
+      {errorMsg ? (
+        <ErrorState
+          title="Failed to load transaction"
+          description={errorMsg}
+        />
+      ) : notFound ? (
         <ErrorState
           title="Transaction not found"
           description="This TXID is not present in the loaded dataset."
@@ -146,10 +156,12 @@ export function TransactionPage() {
                 icon={<ArrowLeftRight className="size-4" />}
               />
               <div className="divide-y divide-line-soft">
-                {tx.relatedEntityIds.map((id) => {
-                  const e = entityById(id)
-                  if (!e) return null
-                  return (
+                {tx.relatedEntityIds.length === 0 ? (
+                  <p className="px-4 py-6 text-sm text-fg-subtle">
+                    No related entity addresses identified for this transaction.
+                  </p>
+                ) : (
+                  tx.relatedEntityIds.map((id) => (
                     <button
                       key={id}
                       type="button"
@@ -157,25 +169,17 @@ export function TransactionPage() {
                       className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-panel-2"
                     >
                       <div className="flex items-center gap-2">
-                        <span
-                          className="size-2 rounded-full"
-                          style={{
-                            backgroundColor: severityColorVar(e.risk.severity),
-                          }}
-                        />
-                        <span className="text-sm font-medium text-fg">
-                          {e.label}
+                        <span className="size-2 rounded-full bg-accent" />
+                        <span className="font-mono-id text-sm font-medium text-fg">
+                          {id.length > 20 ? `${id.slice(0, 10)}…${id.slice(-8)}` : id}
                         </span>
                       </div>
-                      <span
-                        className="font-mono-id text-sm font-semibold tabular-nums"
-                        style={{ color: severityColorVar(e.risk.severity) }}
-                      >
-                        {e.risk.score}
+                      <span className="text-xs text-accent hover:underline">
+                        Investigate →
                       </span>
                     </button>
-                  )
-                })}
+                  ))
+                )}
               </div>
             </Panel>
           </div>
