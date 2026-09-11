@@ -95,8 +95,8 @@ def delete_dataset(
 @router.post("/datasets/{datasetId}/analyses", response_model=ApiResponse[AnalysisTriggerResponse], status_code=status.HTTP_202_ACCEPTED)
 def trigger_analysis(
     datasetId: str,
+    background_tasks: BackgroundTasks,
     payload: Optional[AnalysisRequest] = None,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     analysis_service: AnalysisService = Depends(get_analysis_service),
 ) -> ApiResponse[AnalysisTriggerResponse]:
     """Trigger a new asynchronous analysis run on a dataset."""

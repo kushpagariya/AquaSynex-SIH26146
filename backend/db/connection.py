@@ -56,9 +56,28 @@ def close_db() -> None:
                 _connection = None
 
 
+def get_db_lock() -> threading.RLock:
+    """Return the re-entrant lock used for DuckDB write operations."""
+    return _lock
+
+
 @contextmanager
 def db_cursor() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """Context manager yielding the active connection under thread lock."""
     conn = get_db_connection()
     with _lock:
         yield conn
+
+
+@contextmanager
+def db_transaction() -> Generator[duckdb.DuckDBPyConnection, None, None]:
+    """Context manager executing a block inside a transaction with thread locking."""
+    conn = get_db_connection()
+    with _lock:
+        conn.begin()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise

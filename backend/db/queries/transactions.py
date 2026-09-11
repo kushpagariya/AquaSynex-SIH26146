@@ -35,6 +35,7 @@ def list_transactions(
     from_timestamp: Optional[str] = None,
     to_timestamp: Optional[str] = None,
     min_value_btc: Optional[str] = None,
+    max_value_btc: Optional[str] = None,
     analysis_id: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Query transactions for a dataset with filters, sorting, and pagination."""
@@ -77,20 +78,55 @@ def list_transactions(
         where_clauses.append("r.risk_score <= ?")
         where_params.append(max_risk_score)
 
+    dt_from = None
     if from_timestamp:
-        dt_from = to_utc_datetime(from_timestamp)
-        where_clauses.append("t.timestamp >= ?")
-        where_params.append(dt_from)
+        try:
+            dt_from = to_utc_datetime(from_timestamp)
+            where_clauses.append("t.timestamp >= ?")
+            where_params.append(dt_from)
+        except Exception as exc:
+            raise InvalidFilterValueError(f"Invalid fromTimestamp format: {exc}", {"field": "fromTimestamp", "provided": from_timestamp})
 
+    dt_to = None
     if to_timestamp:
-        dt_to = to_utc_datetime(to_timestamp)
-        where_clauses.append("t.timestamp <= ?")
-        where_params.append(dt_to)
+        try:
+            dt_to = to_utc_datetime(to_timestamp)
+            where_clauses.append("t.timestamp <= ?")
+            where_params.append(dt_to)
+        except Exception as exc:
+            raise InvalidFilterValueError(f"Invalid toTimestamp format: {exc}", {"field": "toTimestamp", "provided": to_timestamp})
 
-    if min_value_btc:
-        min_sat = btc_str_to_satoshi(min_value_btc)
-        where_clauses.append("t.total_output_value_satoshi >= ?")
-        where_params.append(min_sat)
+    if dt_from and dt_to and dt_from > dt_to:
+        raise InvalidFilterValueError("fromTimestamp must be earlier than or equal to toTimestamp", {"fromTimestamp": from_timestamp, "toTimestamp": to_timestamp})
+
+    min_sat = None
+    if min_value_btc is not None:
+        try:
+            min_sat = btc_str_to_satoshi(min_value_btc)
+            if min_sat < 0:
+                raise InvalidFilterValueError("minValueBtc must be non-negative", {"field": "minValueBtc", "provided": min_value_btc})
+            where_clauses.append("t.total_output_value_satoshi >= ?")
+            where_params.append(min_sat)
+        except InvalidFilterValueError:
+            raise
+        except Exception as exc:
+            raise InvalidFilterValueError(f"Invalid minValueBtc format: {exc}", {"field": "minValueBtc", "provided": min_value_btc})
+
+    max_sat = None
+    if max_value_btc is not None:
+        try:
+            max_sat = btc_str_to_satoshi(max_value_btc)
+            if max_sat < 0:
+                raise InvalidFilterValueError("maxValueBtc must be non-negative", {"field": "maxValueBtc", "provided": max_value_btc})
+            where_clauses.append("t.total_output_value_satoshi <= ?")
+            where_params.append(max_sat)
+        except InvalidFilterValueError:
+            raise
+        except Exception as exc:
+            raise InvalidFilterValueError(f"Invalid maxValueBtc format: {exc}", {"field": "maxValueBtc", "provided": max_value_btc})
+
+    if min_sat is not None and max_sat is not None and min_sat > max_sat:
+        raise InvalidFilterValueError("minValueBtc must be <= maxValueBtc", {"minValueBtc": min_value_btc, "maxValueBtc": max_value_btc})
 
     # ML join
     join_clause = "LEFT JOIN ml_results r ON t.transaction_id = r.entity_id AND t.dataset_id = r.dataset_id"

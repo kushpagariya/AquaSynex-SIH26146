@@ -25,6 +25,7 @@ class TransactionService:
         from_timestamp: Optional[str] = None,
         to_timestamp: Optional[str] = None,
         min_value_btc: Optional[str] = None,
+        max_value_btc: Optional[str] = None,
         analysis_id: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """List transactions for a dataset with filters and pagination."""
@@ -44,6 +45,7 @@ class TransactionService:
             from_timestamp=from_timestamp,
             to_timestamp=to_timestamp,
             min_value_btc=min_value_btc,
+            max_value_btc=max_value_btc,
             analysis_id=analysis_id,
         )
 

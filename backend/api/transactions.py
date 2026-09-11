@@ -24,6 +24,7 @@ def list_transactions(
     fromTimestamp: Optional[str] = Query(default=None, description="ISO 8601 start timestamp"),
     toTimestamp: Optional[str] = Query(default=None, description="ISO 8601 end timestamp"),
     minValueBtc: Optional[str] = Query(default=None, description="Minimum total value in BTC decimal string"),
+    maxValueBtc: Optional[str] = Query(default=None, description="Maximum total value in BTC decimal string"),
     analysisId: Optional[str] = Query(default=None, description="Filter to ML results from this analysis"),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ) -> ApiResponse[List[TransactionSummary]]:
@@ -40,6 +41,7 @@ def list_transactions(
         from_timestamp=fromTimestamp,
         to_timestamp=toTimestamp,
         min_value_btc=minValueBtc,
+        max_value_btc=maxValueBtc,
         analysis_id=analysisId,
     )
     return ApiResponse(

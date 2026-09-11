@@ -10,13 +10,12 @@ Rules:
 
 from datetime import datetime, timezone
 import importlib
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import uuid
 import duckdb
 from backend.config import settings
 from backend.db.queries import results as result_queries
 from backend.schemas.analyses import AnalysisConfigSchema
-from backend.schemas.ml_results import MLResultDetail, PredictionSchema
 from backend.utils.errors import (
     FeatureSchemaMismatchError,
     InvalidFeaturesError,
@@ -24,6 +23,20 @@ from backend.utils.errors import (
     ModelLoadError,
 )
 from backend.utils.logging import logger
+
+_custom_runner: Optional[Callable[..., List[Dict[str, Any]]]] = None
+
+
+def set_pipeline_runner(runner_fn: Optional[Callable[..., List[Dict[str, Any]]]]) -> None:
+    """Set custom ML pipeline runner callable (primarily for testing and mock injection)."""
+    global _custom_runner
+    _custom_runner = runner_fn
+
+
+def reset_pipeline_runner() -> None:
+    """Reset custom runner to standard import mechanism."""
+    global _custom_runner
+    _custom_runner = None
 
 
 class PipelineService:
@@ -42,20 +55,19 @@ class PipelineService:
     ) -> List[Dict[str, Any]]:
         """Invoke ML pipeline and persist results to DuckDB.
 
-        Attempts to load in-process ML pipeline if available; if not installed,
-        gracefully informs the caller or processes according to configured capability.
+        Calls `pipeline.ml.model_inference.run_analysis(...)` as specified in docs/backend/backend-ml-contract.md.
+        If external ML module or model artifact is unavailable, raises ModelLoadError.
+        Never fabricates heuristics or fake predictions inside the backend.
         """
         logger.info(
-            f"Invoking analysis for dataset {dataset_id} with model {model_id} (v{model_version})"
+            f"Invoking ML analysis for dataset {dataset_id} with model {model_id} (v{model_version})"
         )
 
+        global _custom_runner
         ml_results: List[Dict[str, Any]] = []
 
-        # Check if pipeline package exists
-        try:
-            pipeline_mod = importlib.import_module("pipeline.ml.model_inference")
-            run_func = getattr(pipeline_mod, "run_analysis")
-            raw_results = run_func(
+        if _custom_runner is not None:
+            raw_results = _custom_runner(
                 dataset_id=dataset_id,
                 model_id=model_id,
                 model_version=model_version,
@@ -64,96 +76,78 @@ class PipelineService:
                 data_dir=settings.DATA_DIR,
                 models_dir=settings.MODELS_DIR,
             )
-            ml_results = [r.dict() if hasattr(r, "dict") else dict(r) for r in raw_results]
-        except ModuleNotFoundError:
-            logger.info("External ML pipeline module not found. Checking if model artifact exists...")
-            # If no ML module is installed yet, check if trained model artifact exists
-            model_path = settings.MODELS_DIR
-            # Rather than faking predictions, we generate baseline analytical evaluation
-            # on canonical transactions if entities exist
-            ml_results = self._generate_canonical_baseline(dataset_id, analysis_id, model_id, model_version, config)
-        except Exception as exc:
-            logger.error(f"ML Pipeline execution failed: {exc}")
-            raise MLError(f"ML pipeline execution error: {exc}") from exc
+            ml_results = [r if isinstance(r, dict) else r.dict() for r in raw_results]
+        else:
+            try:
+                pipeline_mod = importlib.import_module("pipeline.ml.model_inference")
+                run_func = getattr(pipeline_mod, "run_analysis")
+                raw_results = run_func(
+                    dataset_id=dataset_id,
+                    model_id=model_id,
+                    model_version=model_version,
+                    config=config,
+                    db_path=settings.DB_PATH,
+                    data_dir=settings.DATA_DIR,
+                    models_dir=settings.MODELS_DIR,
+                )
+                ml_results = [r if isinstance(r, dict) else r.dict() for r in raw_results]
+            except ModuleNotFoundError as exc:
+                logger.error(
+                    f"ML pipeline module 'pipeline.ml.model_inference' is not installed: {exc}"
+                )
+                raise ModelLoadError(
+                    f"ML pipeline module 'pipeline.ml.model_inference' is not installed or model '{model_id}' artifact is unavailable",
+                    details={"modelId": model_id, "modelVersion": model_version, "error": str(exc)},
+                ) from exc
+            except (ModelLoadError, InvalidFeaturesError, FeatureSchemaMismatchError):
+                raise
+            except Exception as exc:
+                logger.error(f"ML Pipeline execution failed: {exc}")
+                raise MLError(f"ML pipeline execution error: {exc}") from exc
 
-        # Persist results to DuckDB
+        # Validate and persist results to DuckDB
         for item in ml_results:
+            self._validate_ml_result(item)
             self._persist_result(dataset_id, analysis_id, model_id, model_version, item)
 
         logger.info(f"Persisted {len(ml_results)} ML results for analysis {analysis_id}")
         return ml_results
 
-    def _generate_canonical_baseline(
-        self,
-        dataset_id: str,
-        analysis_id: str,
-        model_id: str,
-        model_version: str,
-        config: AnalysisConfigSchema,
-    ) -> List[Dict[str, Any]]:
-        """Baseline statistical scoring based on canonical transaction values when ML package is not installed.
+    def _validate_ml_result(self, result: Dict[str, Any]) -> None:
+        """Validate that an MLResult item conforms to the documented ML contract."""
+        entity_id = result.get("entity_id")
+        if not entity_id or not isinstance(entity_id, str):
+            raise MLError("MLResult invariant violation: 'entity_id' must be a non-empty string")
 
-        Ensures demonstrable offline functionality without fabricating random AI predictions.
-        """
-        query = """
-        SELECT 
-            transaction_id,
-            total_output_value_satoshi,
-            input_count,
-            output_count
-        FROM transactions
-        WHERE dataset_id = ?
-        LIMIT ?
-        """
-        rel = self.conn.execute(query, [dataset_id, config.max_entities])
-        rows = rel.fetchall()
+        entity_type = result.get("entity_type")
+        if entity_type not in ("transaction", "address"):
+            raise MLError(
+                f"MLResult invariant violation: 'entity_type' must be 'transaction' or 'address', got '{entity_type}'"
+            )
 
-        results = []
-        for row in rows:
-            tx_id, val_sat, in_count, out_count = row
-            val_sat = val_sat or 0
-            in_count = in_count or 1
-            out_count = out_count or 1
+        anomaly_score = result.get("anomaly_score")
+        if anomaly_score is None or not (0.0 <= float(anomaly_score) <= 1.0):
+            raise MLError(
+                f"MLResult invariant violation: 'anomaly_score' must be between 0.0 and 1.0, got {anomaly_score}"
+            )
 
-            # Simple statistical percentile anomaly heuristic
-            # SATOSHIS: 1 BTC = 100,000,000; large transaction volume increases risk
-            score = min(0.95, round(min(val_sat / 1_000_000_000, 1.0) * 0.5 + (in_count + out_count) * 0.05, 2))
-            level = "low"
-            if score >= 0.90:
-                level = "critical"
-            elif score >= 0.70:
-                level = "high"
-            elif score >= 0.40:
-                level = "medium"
+        risk_score = result.get("risk_score")
+        if risk_score is None or not (0.0 <= float(risk_score) <= 1.0):
+            raise MLError(
+                f"MLResult invariant violation: 'risk_score' must be between 0.0 and 1.0, got {risk_score}"
+            )
 
-            explanation = {
-                "feature_name": "tx_output_value_satoshi",
-                "display_label": "Transaction Output Volume",
-                "shap_value": round(score * 0.5, 4),
-                "direction": "increases_risk" if score > 0.4 else "neutral",
-                "importance_rank": 1,
-                "normalized_importance": 1.0,
-                "feature_value": val_sat,
-                "feature_unit": "satoshi",
-            }
+        risk_level = result.get("risk_level")
+        if risk_level not in ("low", "medium", "high", "critical"):
+            raise MLError(
+                f"MLResult invariant violation: 'risk_level' must be one of low/medium/high/critical, got '{risk_level}'"
+            )
 
-            results.append({
-                "entity_id": tx_id,
-                "entity_type": "transaction",
-                "anomaly_score": score,
-                "risk_score": score,
-                "risk_level": level,
-                "prediction_label": None,
-                "confidence": 0.85,
-                "explanations": [explanation],
-                "features": [{"feature_name": "tx_output_value_satoshi", "raw_value": val_sat, "normalized_value": score, "is_imputed": False}],
-                "graph_evidence": [],
-                "model_id": model_id,
-                "model_version": model_version,
-                "predicted_at": datetime.now(timezone.utc),
-            })
-
-        return results
+        confidence = result.get("confidence")
+        if confidence is not None and not (0.0 <= float(confidence) <= 1.0):
+            raise MLError(
+                f"MLResult invariant violation: 'confidence' must be between 0.0 and 1.0, got {confidence}"
+            )
 
     def _persist_result(
         self,
@@ -163,7 +157,7 @@ class PipelineService:
         model_version: str,
         result: Dict[str, Any],
     ) -> None:
-        """Write single MLResult to DuckDB."""
+        """Write single validated MLResult to DuckDB."""
         result_id = str(uuid.uuid4())
         result_queries.insert_ml_result(
             conn=self.conn,

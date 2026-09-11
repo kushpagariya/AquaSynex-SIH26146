@@ -45,7 +45,11 @@ class DatasetService:
         if not name or len(name.strip()) == 0 or len(name) > 200:
             raise ValidationError("Dataset name must be between 1 and 200 characters", details={"field": "name"})
 
-        ext = Path(filename).suffix.lower()
+        safe_filename = Path(filename).name
+        if not safe_filename or safe_filename in (".", ".."):
+            raise ValidationError("Invalid file name", details={"field": "filename", "provided": filename})
+
+        ext = Path(safe_filename).suffix.lower()
         if ext not in ALLOWED_FORMATS:
             raise UnsupportedFileFormatError(
                 f"File format '{ext}' is not supported. Supported formats: {list(ALLOWED_FORMATS.keys())}",
@@ -58,7 +62,7 @@ class DatasetService:
         # Create dataset directory
         dataset_dir = Path(settings.DATA_DIR) / dataset_id
         dataset_dir.mkdir(parents=True, exist_ok=True)
-        dest_path = dataset_dir / filename
+        dest_path = dataset_dir / safe_filename
 
         # Write file with size validation
         size_bytes = 0
@@ -74,12 +78,16 @@ class DatasetService:
                     )
                 f_out.write(chunk)
 
+        if size_bytes == 0:
+            dest_path.unlink(missing_ok=True)
+            raise ValidationError("Uploaded file is empty", details={"field": "file"})
+
         # Register dataset in DuckDB with status='processing'
         dataset = dataset_queries.insert_dataset(
             conn=self.conn,
             dataset_id=dataset_id,
             name=name.strip(),
-            file_name=filename,
+            file_name=safe_filename,
             file_path=str(dest_path),
             format_str=format_str,
             size_bytes=size_bytes,
@@ -92,6 +100,15 @@ class DatasetService:
             self._ingest_file(dataset_id, dest_path, format_str)
         except Exception as exc:
             logger.error(f"Failed to ingest dataset {dataset_id}: {exc}")
+            # Clean up any partial data written for this dataset to maintain consistency
+            try:
+                self.conn.execute("DELETE FROM addresses WHERE dataset_id = ?", [dataset_id])
+                self.conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
+                self.conn.execute("DELETE FROM transaction_inputs WHERE dataset_id = ?", [dataset_id])
+                self.conn.execute("DELETE FROM transactions WHERE dataset_id = ?", [dataset_id])
+            except Exception as clean_exc:
+                logger.warning(f"Error during partial ingestion cleanup: {clean_exc}")
+
             dataset_queries.update_dataset(
                 self.conn,
                 dataset_id,
@@ -128,6 +145,7 @@ class DatasetService:
         block_height_col = raw_cols_lower.get("block_height") or raw_cols_lower.get("block") or raw_cols_lower.get("height")
         in_addr_col = raw_cols_lower.get("input_address") or raw_cols_lower.get("sender") or raw_cols_lower.get("from_address")
         out_addr_col = raw_cols_lower.get("output_address") or raw_cols_lower.get("receiver") or raw_cols_lower.get("to_address")
+        label_col = raw_cols_lower.get("label") or raw_cols_lower.get("class") or raw_cols_lower.get("is_illicit") or raw_cols_lower.get("category")
 
         if not tx_col:
             # Fallback: if no tx column, generate row hash or UUID surrogate
@@ -135,10 +153,66 @@ class DatasetService:
         else:
             tx_col_expr = f'CAST("{tx_col}" AS VARCHAR)'
 
-        timestamp_expr = f'TRY_CAST("{time_col}" AS TIMESTAMPTZ)' if time_col else "NULL"
-        val_expr = f'TRY_CAST("{val_col}" AS BIGINT)' if val_col else "0"
-        fee_expr = f'TRY_CAST("{fee_col}" AS BIGINT)' if fee_col else "0"
+        # Timestamp normalization: supports unix epochs (seconds / ms) and ISO timestamps
+        if time_col:
+            timestamp_expr = f"""
+            CASE 
+                WHEN "{time_col}" IS NULL THEN NULL
+                WHEN TRY_CAST("{time_col}" AS BIGINT) IS NOT NULL AND TRY_CAST("{time_col}" AS BIGINT) > 100000000000
+                    THEN to_timestamp(TRY_CAST("{time_col}" AS DOUBLE) / 1000.0)
+                WHEN TRY_CAST("{time_col}" AS BIGINT) IS NOT NULL AND TRY_CAST("{time_col}" AS BIGINT) BETWEEN 1230940800 AND 3000000000
+                    THEN to_timestamp(TRY_CAST("{time_col}" AS BIGINT))
+                ELSE TRY_CAST("{time_col}" AS TIMESTAMPTZ)
+            END
+            """
+        else:
+            timestamp_expr = "NULL"
+
+        # Value normalization: preserves satoshi precision for both BTC float/string and satoshi integer
+        if val_col:
+            val_expr = f"""
+            CASE 
+                WHEN "{val_col}" IS NULL THEN NULL
+                WHEN LOWER('{val_col}') LIKE '%sat%' THEN TRY_CAST("{val_col}" AS BIGINT)
+                WHEN LOWER('{val_col}') LIKE '%btc%' THEN CAST(ROUND(TRY_CAST("{val_col}" AS DOUBLE) * 100000000) AS BIGINT)
+                WHEN CAST("{val_col}" AS VARCHAR) LIKE '%.%' 
+                     OR CAST("{val_col}" AS VARCHAR) LIKE '%e-%' 
+                     OR CAST("{val_col}" AS VARCHAR) LIKE '%E-%'
+                THEN CAST(ROUND(TRY_CAST("{val_col}" AS DOUBLE) * 100000000) AS BIGINT)
+                ELSE TRY_CAST("{val_col}" AS BIGINT)
+            END
+            """
+        else:
+            val_expr = "NULL"
+
+        if fee_col:
+            fee_expr = f"""
+            CASE 
+                WHEN "{fee_col}" IS NULL THEN NULL
+                WHEN LOWER('{fee_col}') LIKE '%sat%' THEN TRY_CAST("{fee_col}" AS BIGINT)
+                WHEN LOWER('{fee_col}') LIKE '%btc%' THEN CAST(ROUND(TRY_CAST("{fee_col}" AS DOUBLE) * 100000000) AS BIGINT)
+                WHEN CAST("{fee_col}" AS VARCHAR) LIKE '%.%' 
+                     OR CAST("{fee_col}" AS VARCHAR) LIKE '%e-%' 
+                     OR CAST("{fee_col}" AS VARCHAR) LIKE '%E-%'
+                THEN CAST(ROUND(TRY_CAST("{fee_col}" AS DOUBLE) * 100000000) AS BIGINT)
+                ELSE TRY_CAST("{fee_col}" AS BIGINT)
+            END
+            """
+        else:
+            fee_expr = "NULL"
+
         block_expr = f'TRY_CAST("{block_height_col}" AS INTEGER)' if block_height_col else "NULL"
+
+        if label_col:
+            label_expr = f"""
+            CASE 
+                WHEN CAST("{label_col}" AS VARCHAR) IN ('1', 'illicit', 'ILLICIT', 'true', 'True') THEN 'illicit'
+                WHEN CAST("{label_col}" AS VARCHAR) IN ('0', 'licit', 'LICIT', 'legitimate', 'false', 'False') THEN 'licit'
+                ELSE 'unknown'
+            END
+            """
+        else:
+            label_expr = "NULL"
 
         # Count total rows
         count_row = self.conn.execute(f"SELECT COUNT(*) FROM {temp_view}").fetchone()
@@ -149,7 +223,7 @@ class DatasetService:
         INSERT OR REPLACE INTO transactions (
             transaction_id, dataset_id, block_height, timestamp,
             input_count, output_count, total_output_value_satoshi,
-            fee_satoshi, ingested_at
+            fee_satoshi, label, ingested_at
         )
         SELECT 
             {tx_col_expr} AS transaction_id,
@@ -160,6 +234,7 @@ class DatasetService:
             1 AS output_count,
             {val_expr} AS total_output_value_satoshi,
             {fee_expr} AS fee_satoshi,
+            {label_expr} AS label,
             current_timestamp AS ingested_at
         FROM {temp_view}
         WHERE {tx_col_expr} IS NOT NULL
@@ -180,6 +255,8 @@ class DatasetService:
             available_fields.append("totalOutputValueBtc")
         if fee_col:
             available_fields.append("feeBtc")
+        if label_col:
+            available_fields.append("label")
 
         if out_addr_col:
             available_fields.append("outputAddress")

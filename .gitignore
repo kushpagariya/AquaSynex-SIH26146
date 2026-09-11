@@ -23,6 +23,7 @@ __pycache__/
 *$py.class
 
 # Virtual environments (local and backend)
+backend/.venv/
 .venv/
 venv/
 ENV/

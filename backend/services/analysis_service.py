@@ -1,16 +1,24 @@
 """Analysis orchestration service managing asynchronous runs and summary counts."""
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import uuid
 from fastapi import BackgroundTasks
 import duckdb
 from backend.config import settings
+from backend.db.connection import get_db_lock
 from backend.db.queries import analyses as analysis_queries
 from backend.db.queries import datasets as dataset_queries
 from backend.schemas.analyses import AnalysisConfigSchema
 from backend.services.pipeline_service import PipelineService
-from backend.utils.errors import DatasetError, DatasetNotFoundError, DatasetProcessingError
+from backend.utils.errors import (
+    DatasetAnalysisRunningError,
+    DatasetError,
+    DatasetNotFoundError,
+    DatasetProcessingError,
+    ModelNotFoundError,
+)
 from backend.utils.logging import logger
 
 
@@ -43,23 +51,46 @@ class AnalysisService:
                 details={"datasetId": dataset_id, "status": dataset["status"]},
             )
 
-        analysis_id = str(uuid.uuid4())
-        model_id = model_id or settings.DEFAULT_MODEL_ID
-        model_version = model_version or settings.DEFAULT_MODEL_VERSION
+        # Check if an analysis is already running or pending on this dataset
+        running_res = self.conn.execute(
+            "SELECT COUNT(*) FROM analysis_runs WHERE dataset_id = ? AND status IN ('pending', 'running')",
+            [dataset_id],
+        ).fetchone()
+        if running_res and running_res[0] > 0:
+            raise DatasetAnalysisRunningError(
+                f"An analysis is already running or pending on dataset '{dataset_id}'",
+                details={"datasetId": dataset_id},
+            )
 
+        chosen_model_id = model_id or settings.DEFAULT_MODEL_ID
+        chosen_model_version = model_version or settings.DEFAULT_MODEL_VERSION
+
+        # Validate model_id against registered models / model directories
+        valid_models = {settings.DEFAULT_MODEL_ID}
+        models_dir = Path(settings.MODELS_DIR)
+        if models_dir.exists():
+            for p in models_dir.iterdir():
+                if p.is_dir():
+                    valid_models.add(p.name)
+
+        if chosen_model_id not in valid_models:
+            raise ModelNotFoundError(model_id=chosen_model_id, version=chosen_model_version)
+
+        analysis_id = str(uuid.uuid4())
         config_obj = AnalysisConfigSchema(**(config_dict or {}))
 
-        # Insert analysis record with status='pending'
-        analysis_queries.insert_analysis_run(
-            conn=self.conn,
-            analysis_id=analysis_id,
-            dataset_id=dataset_id,
-            status="pending",
-            model_id=model_id,
-            model_version=model_version,
-            config=config_obj.model_dump(),
-            started_at=datetime.now(timezone.utc),
-        )
+        # Insert analysis record with status='pending' under lock
+        with get_db_lock():
+            analysis_queries.insert_analysis_run(
+                conn=self.conn,
+                analysis_id=analysis_id,
+                dataset_id=dataset_id,
+                status="pending",
+                model_id=chosen_model_id,
+                model_version=chosen_model_version,
+                config=config_obj.model_dump(),
+                started_at=datetime.now(timezone.utc),
+            )
 
         # Launch background execution
         if background_tasks is not None:
@@ -67,8 +98,8 @@ class AnalysisService:
                 self._execute_analysis_run,
                 analysis_id=analysis_id,
                 dataset_id=dataset_id,
-                model_id=model_id,
-                model_version=model_version,
+                model_id=chosen_model_id,
+                model_version=chosen_model_version,
                 config=config_obj,
             )
         else:
@@ -76,8 +107,8 @@ class AnalysisService:
             self._execute_analysis_run(
                 analysis_id=analysis_id,
                 dataset_id=dataset_id,
-                model_id=model_id,
-                model_version=model_version,
+                model_id=chosen_model_id,
+                model_version=chosen_model_version,
                 config=config_obj,
             )
 
@@ -94,7 +125,8 @@ class AnalysisService:
         """Background worker executing ML analysis and calculating summary risk stats."""
         try:
             logger.info(f"Starting analysis run {analysis_id}...")
-            analysis_queries.update_analysis_status(self.conn, analysis_id, status="running")
+            with get_db_lock():
+                analysis_queries.update_analysis_status(self.conn, analysis_id, status="running")
 
             # Run ML analysis
             results = self.pipeline_service.run_analysis(
@@ -111,27 +143,29 @@ class AnalysisService:
             critical_risk_count = sum(1 for r in results if float(r.get("risk_score", 0.0)) >= 0.90)
 
             # Update status to completed
-            analysis_queries.update_analysis_status(
-                conn=self.conn,
-                analysis_id=analysis_id,
-                status="completed",
-                completed_at=datetime.now(timezone.utc),
-                entity_count=entity_count,
-                high_risk_count=high_risk_count,
-                critical_risk_count=critical_risk_count,
-            )
+            with get_db_lock():
+                analysis_queries.update_analysis_status(
+                    conn=self.conn,
+                    analysis_id=analysis_id,
+                    status="completed",
+                    completed_at=datetime.now(timezone.utc),
+                    entity_count=entity_count,
+                    high_risk_count=high_risk_count,
+                    critical_risk_count=critical_risk_count,
+                )
             logger.info(
                 f"Analysis run {analysis_id} completed successfully. Entities: {entity_count}, High: {high_risk_count}, Critical: {critical_risk_count}"
             )
         except Exception as exc:
             logger.error(f"Analysis run {analysis_id} failed: {exc}")
-            analysis_queries.update_analysis_status(
-                conn=self.conn,
-                analysis_id=analysis_id,
-                status="failed",
-                completed_at=datetime.now(timezone.utc),
-                error_message=str(exc),
-            )
+            with get_db_lock():
+                analysis_queries.update_analysis_status(
+                    conn=self.conn,
+                    analysis_id=analysis_id,
+                    status="failed",
+                    completed_at=datetime.now(timezone.utc),
+                    error_message=str(exc),
+                )
 
     def get_analysis(self, analysis_id: str) -> Dict[str, Any]:
         """Get status and details of an analysis run."""

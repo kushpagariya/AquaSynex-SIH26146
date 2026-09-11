@@ -198,12 +198,21 @@ class GraphService:
         """Extract N-hop neighborhood subgraph centered around a specific address."""
         hops = min(max(1, hops), 3)  # limit hops between 1 and 3
 
-        # Find which dataset contains this address
-        addr_row = self.conn.execute(
-            "SELECT dataset_id FROM addresses WHERE address_id = ? LIMIT 1", [address_id]
-        ).fetchone()
+        dataset_id = None
+        if analysis_id:
+            try:
+                analysis = analysis_queries.get_analysis_by_id(self.conn, analysis_id)
+                dataset_id = analysis.get("dataset_id")
+            except Exception:
+                pass
 
-        dataset_id = addr_row[0] if addr_row else None
+        if not dataset_id:
+            # Find which dataset contains this address
+            addr_row = self.conn.execute(
+                "SELECT dataset_id FROM addresses WHERE address_id = ? LIMIT 1", [address_id]
+            ).fetchone()
+            dataset_id = addr_row[0] if addr_row else None
+
         if not dataset_id:
             # Check transaction inputs/outputs if not in addresses table
             in_row = self.conn.execute(
@@ -214,64 +223,72 @@ class GraphService:
         if not dataset_id:
             raise GraphNotAvailableError(f"Address '{address_id}' not found in any dataset.")
 
-        # Breadth-first search for N-hop neighbors
+        # Batch breadth-first search for N-hop neighbors
         visited_nodes: Set[str] = {address_id}
-        queue: deque = deque([(address_id, 0)])
+        current_frontier: Set[str] = {address_id}
 
-        while queue:
-            curr_addr, curr_hop = queue.popleft()
-            if curr_hop >= hops:
-                continue
+        for _ in range(hops):
+            if not current_frontier or len(visited_nodes) >= 500:
+                break
 
-            # Find neighbors: outputs received from transactions where curr_addr was input
-            fwd_rel = self.conn.execute(
-                """
-                SELECT DISTINCT o.output_address
-                FROM transaction_inputs i
-                JOIN transaction_outputs o ON i.transaction_id = o.transaction_id AND i.dataset_id = o.dataset_id
-                WHERE i.dataset_id = ? AND i.input_address = ? AND o.output_address IS NOT NULL AND o.output_address != ?
-                LIMIT 50
-                """,
-                [dataset_id, curr_addr, curr_addr],
-            )
-            for (nbr,) in fwd_rel.fetchall():
+            frontier_str = ", ".join(f"'{a}'" for a in current_frontier)
+
+            # Batch query next hop neighbors (forward and backward)
+            fwd_sql = f"""
+            SELECT DISTINCT o.output_address
+            FROM transaction_inputs i
+            JOIN transaction_outputs o ON i.transaction_id = o.transaction_id AND i.dataset_id = o.dataset_id
+            WHERE i.dataset_id = ? AND i.input_address IN ({frontier_str}) 
+              AND o.output_address IS NOT NULL
+            LIMIT 100
+            """
+            bwd_sql = f"""
+            SELECT DISTINCT i.input_address
+            FROM transaction_outputs o
+            JOIN transaction_inputs i ON o.transaction_id = i.transaction_id AND o.dataset_id = i.dataset_id
+            WHERE o.dataset_id = ? AND o.output_address IN ({frontier_str}) 
+              AND i.input_address IS NOT NULL
+            LIMIT 100
+            """
+            fwd_rows = self.conn.execute(fwd_sql, [dataset_id]).fetchall()
+            bwd_rows = self.conn.execute(bwd_sql, [dataset_id]).fetchall()
+
+            next_frontier: Set[str] = set()
+            for (nbr,) in fwd_rows:
                 if nbr not in visited_nodes:
                     visited_nodes.add(nbr)
-                    queue.append((nbr, curr_hop + 1))
-
-            # Find neighbors: inputs spent to transactions where curr_addr was output
-            bwd_rel = self.conn.execute(
-                """
-                SELECT DISTINCT i.input_address
-                FROM transaction_outputs o
-                JOIN transaction_inputs i ON o.transaction_id = i.transaction_id AND o.dataset_id = i.dataset_id
-                WHERE o.dataset_id = ? AND o.output_address = ? AND i.input_address IS NOT NULL AND i.input_address != ?
-                LIMIT 50
-                """,
-                [dataset_id, curr_addr, curr_addr],
-            )
-            for (nbr,) in bwd_rel.fetchall():
+                    next_frontier.add(nbr)
+            for (nbr,) in bwd_rows:
                 if nbr not in visited_nodes:
                     visited_nodes.add(nbr)
-                    queue.append((nbr, curr_hop + 1))
+                    next_frontier.add(nbr)
 
-        # Retrieve nodes detail
+            current_frontier = next_frontier
+
+        # Retrieve nodes detail in a single batch query
+        visited_str = ", ".join(f"'{a}'" for a in visited_nodes)
+        ml_join = "AND r.analysis_id = ?" if analysis_id else ""
+        ml_params = [analysis_id, dataset_id] if analysis_id else [dataset_id]
+
+        node_sql = f"""
+        SELECT a.address_id, a.transaction_count, a.total_received_satoshi, a.total_sent_satoshi,
+               a.first_seen_timestamp, a.last_seen_timestamp,
+               r.risk_score, r.risk_level
+        FROM addresses a
+        LEFT JOIN ml_results r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id {ml_join}
+        WHERE a.address_id IN ({visited_str}) AND a.dataset_id = ?
+        """
+        node_rel = self.conn.execute(node_sql, ml_params)
+        fetched_nodes = {row[0]: row for row in node_rel.fetchall()}
+
         nodes_dict: Dict[str, Dict[str, Any]] = {}
         for addr in visited_nodes:
-            row = self.conn.execute(
-                """
-                SELECT a.transaction_count, a.total_received_satoshi, a.total_sent_satoshi,
-                       a.first_seen_timestamp, a.last_seen_timestamp,
-                       r.risk_score, r.risk_level
-                FROM addresses a
-                LEFT JOIN ml_results r ON a.address_id = r.entity_id AND a.dataset_id = r.dataset_id
-                WHERE a.address_id = ? AND a.dataset_id = ?
-                LIMIT 1
-                """,
-                [addr, dataset_id],
-            ).fetchone()
+            row = fetched_nodes.get(addr)
+            if row:
+                _, tx_cnt, recv_sat, sent_sat, first_seen, last_seen, r_score, r_lvl = row
+            else:
+                tx_cnt, recv_sat, sent_sat, first_seen, last_seen, r_score, r_lvl = (0, 0, 0, None, None, None, None)
 
-            tx_cnt, recv_sat, sent_sat, first_seen, last_seen, r_score, r_lvl = row if row else (0, 0, 0, None, None, None, None)
             active_days = max(1, (last_seen - first_seen).days + 1) if (first_seen and last_seen) else None
             label = f"{addr[:8]}...{addr[-4:]}" if len(addr) > 12 else addr
 
