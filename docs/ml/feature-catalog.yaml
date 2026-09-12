@@ -1,0 +1,607 @@
+# AquaSynex Feature Catalog (Version 1.0.0)
+# SIH26146: AI-Powered Monitoring & Analysis of Bitcoin Transaction Traffic
+# Authoritative Machine-Readable Feature Specification
+
+version: "1.0.0"
+dataset: "AquaSynex Canonical Bitcoin Traffic"
+date_created: "2026-09-12"
+
+summary:
+  total_features: 40
+  total_matrix_columns: 41  # 40 features + 1 transaction_id key
+  breakdown:
+    transaction_level: 15
+    address_behavioral: 8
+    temporal_cadence: 7     # 6 canonical + 1 experimental
+    network_telemetry: 6    # 5 numeric + 1 categorical context (net_country)
+    relational: 4
+
+features:
+  # ============================================================================
+  # 1. TRANSACTION-LEVEL FEATURES (15 CANONICAL)
+  # ============================================================================
+  - feature_name: "tx_input_count"
+    description: "Total number of transaction inputs. Retained alongside rel_fan_in to evaluate local vs distinct address topology redundancy during model experimentation."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "transactions.input_count"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "tx_output_count"
+    description: "Total number of transaction outputs. Retained alongside rel_fan_out to evaluate local vs distinct address topology redundancy during model experimentation."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "transactions.output_count"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "tx_input_output_ratio"
+    description: "Ratio of input count to output count, measuring local structural aggregation vs dispersal tendency."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "input_count / max(output_count, 1)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "ratio"
+    is_canonical: true
+
+  - feature_name: "tx_total_input_sats"
+    description: "Cumulative satoshi value of all transaction inputs."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "transactions.total_input_value_satoshi"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_total_output_sats"
+    description: "Cumulative satoshi value of all transaction outputs."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "transactions.total_output_value_satoshi"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_fee_sats"
+    description: "Transaction fee in satoshis."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "total_input_value_satoshi - total_output_value_satoshi"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_size_bytes"
+    description: "Observational byte size of the transaction record as provided in canonical metadata."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "transactions.transaction_size_bytes"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "bytes"
+    is_canonical: true
+
+  - feature_name: "tx_fee_rate_sat_per_byte"
+    description: "Transaction fee intensity in satoshis per byte. High rates reflect bidding urgency or automated script behavior; does not by itself prove illicit intent."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "fee_satoshi / max(transaction_size_bytes, 1)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "sat/byte"
+    is_canonical: true
+
+  - feature_name: "tx_value_balance_ratio"
+    description: "Ratio of output value to input value, measuring value conservation efficiency."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "total_output_value_satoshi / max(total_input_value_satoshi, 1)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "ratio"
+    is_canonical: true
+
+  - feature_name: "tx_avg_input_value_sats"
+    description: "Average satoshi value per input."
+    data_type: "float"
+    source_table: "canonical_transaction_inputs"
+    calculation: "AVG(input_value_satoshi)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_avg_output_value_sats"
+    description: "Average satoshi value per output."
+    data_type: "float"
+    source_table: "canonical_transaction_outputs"
+    calculation: "AVG(output_value_satoshi)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_max_input_value_sats"
+    description: "Maximum single input value in satoshis."
+    data_type: "integer"
+    source_table: "canonical_transaction_inputs"
+    calculation: "MAX(input_value_satoshi)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_max_output_value_sats"
+    description: "Maximum single output value in satoshis."
+    data_type: "integer"
+    source_table: "canonical_transaction_outputs"
+    calculation: "MAX(output_value_satoshi)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_log_total_value"
+    description: "Log-scale output value for stabilizing heavy-tailed monetary distributions."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "log1p(total_output_value_satoshi)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "log_satoshis"
+    is_canonical: true
+
+  - feature_name: "tx_log_fee"
+    description: "Log-scale transaction fee for heavy-tail normalization."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "log1p(fee_satoshi)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "log_satoshis"
+    is_canonical: true
+
+  # ============================================================================
+  # 2. HISTORICAL ADDRESS BEHAVIORAL FEATURES (8 CANONICAL)
+  # ============================================================================
+  - feature_name: "addr_hist_tx_count"
+    description: "Count of prior transactions involving the primary sender."
+    data_type: "integer"
+    source_table: "canonical_transaction_inputs"
+    calculation: "COUNT(tx) WHERE sender == primary_sender AND t < T_tx"
+    category: "RELATIONAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: true
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "addr_hist_total_sent_sats"
+    description: "Cumulative satoshis spent by primary sender prior to T_tx."
+    data_type: "integer"
+    source_table: "canonical_transaction_inputs"
+    calculation: "SUM(sent) WHERE sender == primary_sender AND t < T_tx"
+    category: "RELATIONAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: true
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "addr_hist_total_received_sats"
+    description: "Cumulative satoshis received by primary sender prior to T_tx."
+    data_type: "integer"
+    source_table: "canonical_transaction_outputs"
+    calculation: "SUM(received) WHERE address == primary_sender AND t < T_tx"
+    category: "RELATIONAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: true
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "addr_hist_avg_tx_val_sats"
+    description: "Average value of prior transactions for primary sender."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "addr_hist_total_sent_sats / max(addr_hist_tx_count, 1)"
+    category: "RELATIONAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: false
+    unit: "satoshis"
+    is_canonical: true
+
+  - feature_name: "addr_hist_unique_counterparties"
+    description: "Distinct historical counterparties interacted with prior to T_tx."
+    data_type: "integer"
+    source_table: "canonical_transaction_outputs"
+    calculation: "COUNT(DISTINCT counterparties) WHERE t < T_tx"
+    category: "RELATIONAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: true
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "addr_hist_active_days"
+    description: "Days elapsed between primary sender first appearance and current transaction, capturing wallet lifecycle duration."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "(T_tx - first_seen_ts) / 86400"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: false
+    unit: "days"
+    is_canonical: true
+
+  - feature_name: "addr_hist_tx_per_day"
+    description: "Historical transaction frequency per active day."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "addr_hist_tx_count / max(addr_hist_active_days, 1.0)"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: false
+    unit: "tx/day"
+    is_canonical: true
+
+  - feature_name: "addr_reuse_count"
+    description: "Number of prior transactions in which this address appeared in inputs. Observational Bitcoin privacy heuristic measuring address hygiene."
+    data_type: "integer"
+    source_table: "canonical_transaction_inputs"
+    calculation: "COUNT(inputs) WHERE address == primary_sender AND t < T_tx"
+    category: "RELATIONAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: true
+    unit: "count"
+    is_canonical: true
+
+  # ============================================================================
+  # 3. TEMPORAL CADENCE FEATURES (6 CANONICAL + 1 EXPERIMENTAL)
+  # ============================================================================
+  - feature_name: "time_hour_of_day"
+    description: "Hour of transaction broadcast in UTC (0–23). Retained as a raw observational feature for now; downstream model preprocessing should consider cyclic transformations (e.g. sin/cos)."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "EXTRACT(hour FROM timestamp)"
+    category: "TEMPORAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "hour"
+    is_canonical: true
+
+  - feature_name: "time_day_of_week"
+    description: "Day of week in UTC (0=Monday, 6=Sunday). Retained as a raw observational feature for now; downstream model preprocessing should consider cyclic transformations (e.g. sin/cos)."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "EXTRACT(dow FROM timestamp)"
+    category: "TEMPORAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "day"
+    is_canonical: true
+
+  - feature_name: "time_since_prev_global_tx_sec"
+    description: "Seconds elapsed since the immediately preceding global transaction in dataset."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "T_tx - T_prev_global"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "1_event"
+    ML_eligible: true
+    graph_related: false
+    unit: "seconds"
+    is_canonical: true
+
+  - feature_name: "time_since_prev_addr_tx_sec"
+    description: "Seconds elapsed since prior transaction by same sender (86400s if first seen), measuring sender burst intensity continuously."
+    data_type: "float"
+    source_table: "canonical_transactions"
+    calculation: "T_tx - T_prev_addr"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "1_addr_event"
+    ML_eligible: true
+    graph_related: false
+    unit: "seconds"
+    is_canonical: true
+
+  - feature_name: "time_txs_last_1m"
+    description: "Total global transaction volume in the preceding 60-second window."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "COUNT(tx) in [T_tx - 60s, T_tx)"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "60_seconds"
+    ML_eligible: true
+    graph_related: false
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "time_txs_last_5m"
+    description: "Total global transaction volume in the preceding 300-second window."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "COUNT(tx) in [T_tx - 300s, T_tx)"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "300_seconds"
+    ML_eligible: true
+    graph_related: false
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "time_txs_last_1h"
+    description: "Total global transaction volume in the preceding 3600-second window."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "COUNT(tx) in [T_tx - 3600s, T_tx)"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "3600_seconds"
+    ML_eligible: true
+    graph_related: false
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "time_burst_indicator"
+    description: "Experimental binary indicator (time_since_prev_addr_tx_sec < 10). Kept strictly experimental and excluded from canonical v1 matrix."
+    data_type: "integer"
+    source_table: "canonical_transactions"
+    calculation: "1 if time_since_prev_addr_tx_sec < 10 else 0"
+    category: "TEMPORAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: false
+    graph_related: false
+    unit: "binary"
+    is_canonical: false
+
+  # ============================================================================
+  # 4. NETWORK TELEMETRY FEATURES (6 FEATURES: 5 NUMERIC + 1 CONTEXT)
+  # ============================================================================
+  - feature_name: "net_src_port"
+    description: "Ephemeral source port of broadcasting peer."
+    data_type: "integer"
+    source_table: "canonical_network_events"
+    calculation: "network_events.src_port"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "port"
+    is_canonical: true
+
+  - feature_name: "net_dst_port"
+    description: "Destination port of listening peer node."
+    data_type: "integer"
+    source_table: "canonical_network_events"
+    calculation: "network_events.dst_port"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "port"
+    is_canonical: true
+
+  - feature_name: "net_is_standard_bitcoin_port"
+    description: "Binary indicator if peer destination port equals 8333."
+    data_type: "integer"
+    source_table: "canonical_network_events"
+    calculation: "1 if dst_port == 8333 else 0"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "binary"
+    is_canonical: true
+
+  - feature_name: "net_asn"
+    description: "Autonomous System Number (ASN) of broadcasting IP. Network identity information; requires appropriate categorical encoding (e.g. target, frequency, or embedding) before use in numeric ML models."
+    data_type: "integer"
+    source_table: "canonical_network_events"
+    calculation: "network_events.asn"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: false  # Requires categorical encoding
+    graph_related: false
+    unit: "asn"
+    is_canonical: true
+
+  - feature_name: "net_hist_unique_ips_for_addr"
+    description: "Count of distinct source IPs previously used by primary sender prior to T_tx, measuring proxy or IP churn dynamically without hardcoded port lists."
+    data_type: "integer"
+    source_table: "canonical_network_events"
+    calculation: "COUNT(DISTINCT src_ip) WHERE sender == primary_sender AND t < T_tx"
+    category: "RELATIONAL"
+    leakage_risk: "Mitigated (strictly t < T_tx)"
+    reference_time: "T_tx"
+    lookback_window: "(-inf, T_tx)"
+    ML_eligible: true
+    graph_related: true
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "net_country"
+    description: "Observational two-letter ISO country code of broadcasting peer. Observational categorical context field; must not be passed directly as a numeric ML feature without encoding."
+    data_type: "string"
+    source_table: "canonical_network_events"
+    calculation: "network_events.country"
+    category: "OBSERVATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: false  # Categorical context field; requires encoding
+    graph_related: false
+    unit: "iso_country_code"
+    is_canonical: true
+
+  # ============================================================================
+  # 5. GRAPH-INDEPENDENT RELATIONAL FEATURES (4 CANONICAL)
+  # ============================================================================
+  - feature_name: "rel_fan_in"
+    description: "Count of distinct input addresses in current transaction. Retained alongside tx_input_count to evaluate topology vs input count redundancy during model experimentation."
+    data_type: "integer"
+    source_table: "canonical_transaction_inputs"
+    calculation: "COUNT(DISTINCT input_address)"
+    category: "RELATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: true
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "rel_fan_out"
+    description: "Count of distinct output addresses in current transaction. Retained alongside tx_output_count to evaluate topology vs output count redundancy during model experimentation."
+    data_type: "integer"
+    source_table: "canonical_transaction_outputs"
+    calculation: "COUNT(DISTINCT output_address)"
+    category: "RELATIONAL"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: true
+    unit: "count"
+    is_canonical: true
+
+  - feature_name: "rel_has_change_output"
+    description: "Binary flag indicating whether transaction contains a change output."
+    data_type: "integer"
+    source_table: "canonical_transaction_outputs"
+    calculation: "1 if ANY(is_change == true) else 0"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "binary"
+    is_canonical: true
+
+  - feature_name: "rel_change_value_ratio"
+    description: "Fraction of total output satoshis routed back as change, measuring peeling chain vs complete sweep patterns."
+    data_type: "float"
+    source_table: "canonical_transaction_outputs"
+    calculation: "change_satoshi / max(total_output_value_satoshi, 1)"
+    category: "DERIVED"
+    leakage_risk: "None"
+    reference_time: "T_tx"
+    lookback_window: "current"
+    ML_eligible: true
+    graph_related: false
+    unit: "ratio"
+    is_canonical: true
