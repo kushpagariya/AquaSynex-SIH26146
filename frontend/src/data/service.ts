@@ -9,6 +9,7 @@ import {
   getAddressSubgraph,
   getAnalysis,
   getDataset,
+  getEntityResultDetail,
   getTransaction as apiGetTransaction,
   listAddresses,
   listAnalysesForDataset,
@@ -27,6 +28,7 @@ import type {
   EntityType,
   EvidenceItem,
   Investigation,
+  NetworkInfo,
   Severity,
   TimelineEvent,
   Transaction,
@@ -40,32 +42,69 @@ export interface SearchResult {
   route: string
 }
 
-/**
- * Resolves the currently active dataset and analysis IDs from the backend.
- */
-export async function getActiveContext(): Promise<{
+interface ActiveSessionContext {
   datasetId?: string
   analysisId?: string
-}> {
-  try {
-    const datasetsRes = await listDatasets({
-      page: 1,
-      pageSize: 1,
-      sortBy: "uploadedAt",
-      sortDir: "desc",
-    })
-    const datasets = datasetsRes.data || []
-    if (!datasets.length) return {}
+}
 
-    const datasetId = datasets[0].datasetId
-    const analyses = await listAnalysesForDataset(datasetId)
-    const analysisId = analyses.length ? analyses[0].analysisId : undefined
+let sessionContext: ActiveSessionContext = {}
+let activeContextPromise: Promise<ActiveSessionContext> | null = null
 
-    return { datasetId, analysisId }
-  } catch (err) {
-    console.error("Failed to resolve active context from backend:", err)
-    return {}
+export function setActiveContext(datasetId?: string, analysisId?: string) {
+  sessionContext = { datasetId, analysisId }
+}
+
+export function clearActiveContext() {
+  sessionContext = {}
+}
+
+/**
+ * Resolves the currently active dataset and analysis IDs from the backend.
+ * Uses cached session IDs if valid, otherwise gracefully queries backend.
+ */
+export async function getActiveContext(forceRefresh = false): Promise<ActiveSessionContext> {
+  if (!forceRefresh && sessionContext.datasetId && sessionContext.analysisId) {
+    return sessionContext
   }
+
+  if (activeContextPromise && !forceRefresh) {
+    return activeContextPromise
+  }
+
+  activeContextPromise = (async () => {
+    try {
+      const datasetsRes = await listDatasets({
+        page: 1,
+        pageSize: 1,
+        sortBy: "uploadedAt",
+        sortDir: "desc",
+      })
+      const datasets = datasetsRes.data || []
+      if (!datasets.length) {
+        sessionContext = {}
+        return {}
+      }
+
+      const datasetId = datasets[0].datasetId
+      const analyses = await listAnalysesForDataset(datasetId).catch(() => [])
+      const activeAnalysis =
+        analyses.find((a) => a.status === "completed") ||
+        analyses.find((a) => a.status === "running" || a.status === "pending") ||
+        analyses[0]
+      const analysisId = activeAnalysis ? activeAnalysis.analysisId : undefined
+
+      sessionContext = { datasetId, analysisId }
+      return sessionContext
+    } catch (err) {
+      console.error("Failed to resolve active context from backend:", err)
+      sessionContext = {}
+      return {}
+    } finally {
+      activeContextPromise = null
+    }
+  })()
+
+  return activeContextPromise
 }
 
 /**
@@ -82,65 +121,92 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       highRiskEntities: 0,
       activeAlerts: 0,
       anomaliesDetected: 0,
+      lastProcessed: undefined,
+      processingStatus: {
+        ingestion: false,
+        entityResolution: false,
+        riskScoring: false,
+        graphBuild: false,
+      },
       deltas: { transactions: 0, entities: 0, alerts: 0, highRisk: 0 },
       anomalySeries: [],
     }
   }
 
-  const [datasetDetail, addrList] = await Promise.all([
+  const [datasetDetail, addrList, analysisDetail] = await Promise.all([
     getDataset(datasetId).catch(() => null),
     listAddresses(datasetId, { page: 1, pageSize: 1, analysisId }).catch(() => null),
+    analysisId ? getAnalysis(analysisId).catch(() => null) : Promise.resolve(null),
   ])
 
-  let totalEntities = addrList?.meta?.pagination?.totalItems || 0
-  let highRisk = 0
-  let criticalRisk = 0
-  let activeAlerts = 0
-  let anomaliesDetected = 0
+  let totalEntities =
+    addrList?.meta?.pagination?.totalItems ||
+    analysisDetail?.entityCount ||
+    (datasetDetail?.validationSummary?.addressCount as number) ||
+    0
+  let highRisk = analysisDetail?.highRiskCount || 0
+  let criticalRisk = analysisDetail?.criticalRiskCount || 0
+  let activeAlerts = highRisk + criticalRisk
+  let anomaliesDetected = activeAlerts
+  let lastProcessed = analysisDetail?.completedAt || datasetDetail?.uploadedAt || undefined
 
-  if (analysisId) {
-    try {
-      const analysis = await getAnalysis(analysisId)
-      if (analysis.entityCount) totalEntities = analysis.entityCount
-      highRisk = analysis.highRiskCount || 0
-      criticalRisk = analysis.criticalRiskCount || 0
-      activeAlerts = highRisk + criticalRisk
-      anomaliesDetected = activeAlerts
-    } catch {
-      // Non-blocking analysis lookup failure
-    }
+  const isCompleted = analysisDetail?.status === "completed" || datasetDetail?.status === "ready"
+  const processingStatus = {
+    ingestion: datasetDetail?.status === "ready" || isCompleted,
+    entityResolution: isCompleted,
+    riskScoring: isCompleted,
+    graphBuild: isCompleted,
   }
 
-  // Construct anomaly series from recent transactions
+  // Construct anomaly series from recent transactions, discretized into uniform bounded bins
   let anomalySeries: AnomalyBucket[] = []
   try {
     const txRes = await listTransactions(datasetId, {
       page: 1,
-      pageSize: 100,
+      pageSize: 200,
       sortBy: "timestamp",
       sortDir: "asc",
       analysisId,
     })
     const txs = txRes.data || []
     if (txs.length) {
-      const buckets: Record<string, { total: number; anomalies: number }> = {}
-      for (const tx of txs) {
-        if (!tx.timestamp) continue
-        const hour = new Date(tx.timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-        if (!buckets[hour]) buckets[hour] = { total: 0, anomalies: 0 }
-        buckets[hour].total++
-        if (tx.riskLevel === "high" || tx.riskLevel === "critical") {
-          buckets[hour].anomalies++
+      const timestamps = txs
+        .map((t) => (t.timestamp ? new Date(t.timestamp).getTime() : NaN))
+        .filter((t) => !isNaN(t))
+
+      if (timestamps.length) {
+        const minTime = Math.min(...timestamps)
+        const maxTime = Math.max(...timestamps)
+        const numBuckets = Math.min(10, Math.max(3, txs.length))
+        const timeSpan = maxTime - minTime
+        const interval = timeSpan > 0 ? timeSpan / numBuckets : 3600000
+
+        const buckets: AnomalyBucket[] = []
+        for (let i = 0; i < numBuckets; i++) {
+          const bStart = minTime + i * interval
+          const bEnd = minTime + (i + 1) * interval
+          const label = new Date(bStart).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+          const inBucket = txs.filter((t) => {
+            if (!t.timestamp) return false
+            const time = new Date(t.timestamp).getTime()
+            return i === numBuckets - 1
+              ? time >= bStart && time <= bEnd
+              : time >= bStart && time < bEnd
+          })
+          const anomalies = inBucket.filter(
+            (t) => t.riskLevel === "high" || t.riskLevel === "critical",
+          ).length
+          buckets.push({
+            label,
+            transactions: inBucket.length,
+            anomalies,
+          })
         }
+        anomalySeries = buckets
       }
-      anomalySeries = Object.entries(buckets).map(([label, b]) => ({
-        label,
-        transactions: b.total,
-        anomalies: b.anomalies,
-      }))
     }
   } catch {
     anomalySeries = []
@@ -153,13 +219,15 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     highRiskEntities: highRisk + criticalRisk,
     activeAlerts,
     anomaliesDetected,
+    lastProcessed,
+    processingStatus,
     deltas: { transactions: 0, entities: 0, alerts: 0, highRisk: 0 },
     anomalySeries,
   }
 }
 
 /**
- * Retrieves alerts (ML anomalies) from the active analysis run.
+ * Retrieves high/critical risk predictions from the active analysis run as actionable alerts.
  */
 export async function getAlerts(): Promise<Alert[]> {
   const { analysisId } = await getActiveContext()
@@ -273,19 +341,65 @@ export async function getTransactions(): Promise<Transaction[]> {
 /**
  * Retrieves loaded dataset metadata and validation summary.
  */
-export async function getDatasetInfo(): Promise<DatasetInfo | null> {
+export async function getDatasetInfo(datasetIdOverride?: string): Promise<DatasetInfo | null> {
   try {
-    const listRes = await listDatasets({
-      page: 1,
-      pageSize: 1,
-      sortBy: "uploadedAt",
-      sortDir: "desc",
-    })
-    const datasets = listRes.data || []
-    if (!datasets.length) return null
+    let targetDatasetId = datasetIdOverride
+    if (!targetDatasetId) {
+      const activeCtx = await getActiveContext()
+      targetDatasetId = activeCtx.datasetId
+    }
+    if (!targetDatasetId) {
+      const listRes = await listDatasets({
+        page: 1,
+        pageSize: 1,
+        sortBy: "uploadedAt",
+        sortDir: "desc",
+      })
+      const datasets = listRes.data || []
+      if (!datasets.length) return null
+      targetDatasetId = datasets[0].datasetId
+    }
 
-    const detail = await getDataset(datasets[0].datasetId)
+    const [detail, addrListRes, analysesRes, txSampleRes] = await Promise.all([
+      getDataset(targetDatasetId),
+      listAddresses(targetDatasetId, { page: 1, pageSize: 1 }).catch(() => null),
+      listAnalysesForDataset(targetDatasetId).catch(() => []),
+      listTransactions(targetDatasetId, {
+        page: 1,
+        pageSize: 50,
+        sortBy: "timestamp",
+        sortDir: "asc",
+      }).catch(() => null),
+    ])
+
     const val = detail.validationSummary || {}
+    const completedAnalysis =
+      analysesRes.find((a) => a.status === "completed") ||
+      analysesRes.find((a) => a.status === "running" || a.status === "pending")
+
+    const totalAddresses =
+      addrListRes?.meta?.pagination?.totalItems ??
+      (val.addressCount as number) ??
+      (val.unique_addresses as number) ??
+      completedAnalysis?.entityCount ??
+      0
+
+    const flagged = completedAnalysis
+      ? (completedAnalysis.highRiskCount || 0) + (completedAnalysis.criticalRiskCount || 0)
+      : 0
+
+    let dateSpan = "—"
+    const txs = txSampleRes?.data || []
+    if (txs.length >= 2) {
+      const firstTs = txs[0]?.timestamp
+      const lastTs = txs[txs.length - 1]?.timestamp
+      const t1 = firstTs ? new Date(firstTs).getTime() : NaN
+      const t2 = lastTs ? new Date(lastTs).getTime() : NaN
+      if (!isNaN(t1) && !isNaN(t2)) {
+        const diffHours = Math.round(Math.abs(t2 - t1) / 3600000)
+        dateSpan = diffHours > 24 ? `${Math.round(diffHours / 24)}d` : `${Math.max(1, diffHours)}h`
+      }
+    }
 
     return {
       id: detail.datasetId,
@@ -294,21 +408,22 @@ export async function getDatasetInfo(): Promise<DatasetInfo | null> {
       format: detail.format.toUpperCase(),
       uploadedAt: detail.uploadedAt,
       stage:
-        detail.status === "completed"
+        completedAnalysis?.status === "completed" || detail.status === "ready"
           ? "completed"
-          : detail.status === "failed"
+          : detail.status === "error" || completedAnalysis?.status === "failed"
             ? "failed"
             : "processing",
       progress: 100,
       stats: {
         transactions: detail.canonicalTxCount || detail.rowCount || 0,
-        entities: (val.unique_addresses as number) || (val.address_count as number) || 0,
-        addresses: (val.unique_addresses as number) || (val.address_count as number) || 0,
-        blocks: (val.block_count as number) || 0,
-        dateRange: { from: "", to: "" },
-        flagged: 0,
+        entities: totalAddresses,
+        addresses: totalAddresses,
+        blocks: (val.block_count as number) || (txs[0]?.blockHeight ? 1 : 0),
+        dateRange: { from: txs[0]?.timestamp || "", to: txs[txs.length - 1]?.timestamp || "" },
+        flagged,
+        span: dateSpan,
       },
-      error: detail.errorMessage,
+      error: detail.errorMessage || completedAnalysis?.errorMessage,
     }
   } catch (err) {
     console.error("Failed to load dataset info from backend:", err)
@@ -317,7 +432,7 @@ export async function getDatasetInfo(): Promise<DatasetInfo | null> {
 }
 
 /**
- * Fetches transaction details including inputs, outputs, and attached ML prediction.
+ * Fetches transaction details including inputs, outputs, network events, and attached ML prediction.
  */
 export async function getTransaction(txid: string): Promise<Transaction | null> {
   try {
@@ -345,6 +460,18 @@ export async function getTransaction(txid: string): Promise<Transaction | null> 
       ),
     )
 
+    const netEvent = tx.networkEvents?.[0]
+    const network: NetworkInfo = {
+      ip: netEvent?.srcIp || "—",
+      port: netEvent?.srcPort || 8333,
+      asn: netEvent?.asn ? String(netEvent.asn) : "—",
+      asnOrg: netEvent?.asn ? `AS${netEvent.asn}` : "Unspecified Network Telemetry",
+      country: netEvent?.country || "Unknown",
+      countryCode: (netEvent?.country || "XX").slice(0, 2).toUpperCase(),
+      firstSeen: tx.timestamp || "",
+      lastSeen: tx.timestamp || "",
+    }
+
     return {
       txid: tx.transactionId,
       timestamp: tx.timestamp || new Date().toISOString(),
@@ -354,16 +481,7 @@ export async function getTransaction(txid: string): Promise<Transaction | null> 
       block: tx.blockHeight || 0,
       inputs,
       outputs,
-      network: {
-        ip: "—",
-        port: 8333,
-        asn: "—",
-        asnOrg: "Unspecified Network Telemetry",
-        country: "Unknown",
-        countryCode: "XX",
-        firstSeen: tx.timestamp || "",
-        lastSeen: tx.timestamp || "",
-      },
+      network,
       relatedEntityIds: related,
       riskScore:
         tx.riskScore !== undefined && tx.riskScore !== null
@@ -378,32 +496,291 @@ export async function getTransaction(txid: string): Promise<Transaction | null> 
 }
 
 /**
- * Fetches complete investigation bundle for an address entity (profile, graph, timeline, evidence).
+ * Fetches complete investigation bundle for an entity (supports both transactions and addresses).
+ * Avoids requesting address endpoint for transaction IDs.
  */
-export async function getInvestigation(entityId: string): Promise<Investigation | null> {
+export async function getInvestigation(
+  entityId: string,
+  entityTypeHint?: string,
+): Promise<Investigation | null> {
   try {
     const { analysisId } = await getActiveContext()
+
+    // Determine entity type:
+    // 1. Explicit hint provided
+    // 2. Query ML result detail
+    // 3. Fall back to ID format candidate
+    let resolvedType: "transaction" | "wallet" | "address" | undefined =
+      entityTypeHint === "transaction"
+        ? "transaction"
+        : entityTypeHint === "wallet" || entityTypeHint === "address"
+          ? "wallet"
+          : undefined
+
+    let mlResultDetail: import("@/api").MLResultDetail | null = null
+
+    if (!resolvedType && analysisId) {
+      try {
+        mlResultDetail = await getEntityResultDetail(analysisId, entityId)
+        if (mlResultDetail.entityType === "transaction") {
+          resolvedType = "transaction"
+        } else {
+          resolvedType = "wallet"
+        }
+      } catch {
+        // Result lookup skipped
+      }
+    }
+
+    if (!resolvedType) {
+      if (/^[0-9a-fA-F]{64}$/.test(entityId)) {
+        resolvedType = "transaction"
+      } else {
+        resolvedType = "wallet"
+      }
+    }
+
+    // Handle transaction investigation
+    if (resolvedType === "transaction") {
+      const tx = await apiGetTransaction(entityId, analysisId)
+      if (!mlResultDetail && analysisId) {
+        try {
+          mlResultDetail = await getEntityResultDetail(analysisId, entityId)
+        } catch {
+          // ML result optional
+        }
+      }
+
+      const score =
+        mlResultDetail?.riskScore !== undefined
+          ? Math.round(mlResultDetail.riskScore * 100)
+          : tx.riskScore !== undefined && tx.riskScore !== null
+            ? Math.round(tx.riskScore * 100)
+            : 0
+      const severity = (mlResultDetail?.riskLevel?.toLowerCase() ||
+        tx.riskLevel?.toLowerCase() ||
+        "low") as Severity
+
+      const factors = (mlResultDetail?.explanations || []).map((exp, idx) => ({
+        id: `f-${idx}`,
+        label: exp.displayLabel || exp.featureName,
+        weight: exp.normalizedImportance || 0.2,
+        description: `${exp.direction === "increases_risk" ? "Elevated risk indicator:" : "Factor"} ${exp.displayLabel} (SHAP value: ${exp.shapValue.toFixed(4)})`,
+      }))
+
+      const netEvent = tx.networkEvents?.[0]
+      const network: NetworkInfo = {
+        ip: netEvent?.srcIp || "—",
+        port: netEvent?.srcPort || 8333,
+        asn: netEvent?.asn ? String(netEvent.asn) : "—",
+        asnOrg: netEvent?.asn ? `AS${netEvent.asn}` : "Bitcoin P2P Network",
+        country: netEvent?.country || "Unknown",
+        countryCode: (netEvent?.country || "XX").slice(0, 2).toUpperCase(),
+        firstSeen: tx.timestamp || "",
+        lastSeen: tx.timestamp || "",
+      }
+
+      const inputTxs = (tx.inputs || []).map((i) => ({
+        entityId: i.inputAddress,
+        address: i.inputAddress || "Unknown",
+        amount: parseFloat(i.inputValueBtc || "0"),
+      }))
+
+      const outputTxs = (tx.outputs || []).map((o) => ({
+        entityId: o.outputAddress,
+        address: o.outputAddress || "Unknown",
+        amount: parseFloat(o.outputValueBtc || "0"),
+      }))
+
+      const relatedAddrs = Array.from(
+        new Set(
+          [...inputTxs.map((i) => i.address), ...outputTxs.map((o) => o.address)].filter(
+            (a) => a && a !== "Unknown",
+          ),
+        ),
+      )
+
+      const connectedEntities: Entity[] = relatedAddrs.map((addr) => ({
+        id: addr,
+        type: "wallet",
+        label: addr.length > 16 ? `${addr.slice(0, 8)}…${addr.slice(-6)}` : addr,
+        address: addr,
+        risk: { score: 0, severity: "low", factors: [] },
+        firstSeen: tx.timestamp || "",
+        lastSeen: tx.timestamp || "",
+        totalTransactions: 1,
+        totalReceived: 0,
+        totalSent: 0,
+        balance: 0,
+        tags: [],
+        connectedEntityIds: [entityId],
+      }))
+
+      const txAmount = parseFloat(tx.totalOutputValueBtc || tx.totalInputValueBtc || "0")
+      const txFee = parseFloat(tx.feeBtc || "0")
+
+      const entity: Entity = {
+        id: tx.transactionId,
+        type: "transaction",
+        label: `TX ${tx.transactionId.slice(0, 8)}…${tx.transactionId.slice(-6)}`,
+        risk: {
+          score,
+          severity,
+          factors,
+          summary: factors.length
+            ? `Analysis flagged ${factors.length} primary risk factors for this transaction.`
+            : "Standard transaction behavior observed with no significant anomalies.",
+        },
+        firstSeen: tx.timestamp || "",
+        lastSeen: tx.timestamp || "",
+        totalTransactions: 1,
+        totalReceived: txAmount,
+        totalSent: txAmount,
+        balance: 0,
+        tags: tx.riskLevel ? [tx.riskLevel.toLowerCase()] : [],
+        network,
+        connectedEntityIds: relatedAddrs,
+      }
+
+      const timeline: TimelineEvent[] = [
+        {
+          id: `tl-tx-${tx.transactionId}`,
+          timestamp: tx.timestamp || new Date().toISOString(),
+          kind: "transaction",
+          title: "Transaction Confirmed",
+          detail: `Block ${tx.blockHeight ?? "Pending"} • Transferred ${txAmount} BTC (Fee: ${txFee.toFixed(5)} BTC)`,
+          severity,
+          txid: tx.transactionId,
+        },
+      ]
+
+      if (netEvent?.srcIp) {
+        timeline.push({
+          id: `tl-net-${tx.transactionId}`,
+          timestamp: tx.timestamp || new Date().toISOString(),
+          kind: "network",
+          title: "Network Telemetry Observed",
+          detail: `Broadcasting Node: ${netEvent.srcIp}:${netEvent.srcPort || 8333} (ASN ${netEvent.asn || "Unknown"}, ${netEvent.country || "Unknown"})`,
+          severity,
+        })
+      }
+
+      const evidence: EvidenceItem[] = [
+        ...(mlResultDetail?.graphEvidence || []).map((ge, idx) => ({
+          id: `ev-ge-${idx}`,
+          category: "connections" as const,
+          title: ge.label,
+          detail: ge.description,
+          severity,
+        })),
+        ...factors.map((f, idx) => ({
+          id: `ev-exp-${idx}`,
+          category: "model" as const,
+          title: f.label,
+          detail: f.description,
+          severity,
+        })),
+        {
+          id: "ev-tx-params",
+          category: "transaction" as const,
+          title: "Transaction Attributes",
+          detail: `${tx.inputs.length} inputs, ${tx.outputs.length} outputs, ${txFee.toFixed(5)} BTC fee`,
+          severity: "low" as const,
+        },
+      ]
+
+      const graphNodes = [
+        {
+          id: tx.transactionId,
+          label: `TX ${tx.transactionId.slice(0, 8)}…`,
+          type: "transaction" as EntityType,
+          severity,
+          isFocus: true,
+        },
+        ...inputTxs.map((i) => ({
+          id: i.address,
+          label:
+            i.address.length > 14
+              ? `${i.address.slice(0, 6)}…${i.address.slice(-4)}`
+              : i.address,
+          type: "wallet" as EntityType,
+          severity: "low" as Severity,
+          isFocus: false,
+        })),
+        ...outputTxs.map((o) => ({
+          id: o.address,
+          label:
+            o.address.length > 14
+              ? `${o.address.slice(0, 6)}…${o.address.slice(-4)}`
+              : o.address,
+          type: "wallet" as EntityType,
+          severity: "low" as Severity,
+          isFocus: false,
+        })),
+      ]
+
+      const uniqueNodes = Array.from(new Map(graphNodes.map((n) => [n.id, n])).values())
+
+      const graphEdges = [
+        ...inputTxs.map((i, idx) => ({
+          id: `e-in-${idx}`,
+          source: i.address,
+          target: tx.transactionId,
+          amount: i.amount,
+          label: i.amount ? `${i.amount} BTC` : undefined,
+          suspicious: severity === "high" || severity === "critical",
+        })),
+        ...outputTxs.map((o, idx) => ({
+          id: `e-out-${idx}`,
+          source: tx.transactionId,
+          target: o.address,
+          amount: o.amount,
+          label: o.amount ? `${o.amount} BTC` : undefined,
+          suspicious: severity === "high" || severity === "critical",
+        })),
+      ]
+
+      return {
+        entity,
+        transactions: [
+          {
+            txid: tx.transactionId,
+            timestamp: tx.timestamp || "",
+            amount: txAmount,
+            fee: txFee,
+            confirmations: 6,
+            block: tx.blockHeight || 0,
+            inputs: inputTxs,
+            outputs: outputTxs,
+            network,
+            relatedEntityIds: relatedAddrs,
+            riskScore: score,
+            severity,
+          },
+        ],
+        connectedEntities,
+        timeline,
+        evidence,
+        graph: {
+          nodes: uniqueNodes,
+          edges: graphEdges,
+        },
+      }
+    }
+
+    // Handle address investigation
     const [addr, graphData] = await Promise.all([
       getAddress(entityId, analysisId),
       getAddressSubgraph(entityId, { hops: 2, analysisId }).catch(
         (): import("@/api").GraphExport => ({
-          graphId: "fallback",
+          graphId: "",
           datasetId: "",
           generatedAt: new Date().toISOString(),
-          nodeCount: 1,
+          nodeCount: 0,
           edgeCount: 0,
           isSubgraph: true,
           subgraphCenter: entityId,
-          nodes: [
-            {
-              id: entityId,
-              label: `${entityId.slice(0, 8)}…`,
-              nodeType: "address",
-              riskScore: 0,
-              riskLevel: "low",
-              metadata: undefined,
-            },
-          ],
+          nodes: [],
           edges: [],
         }),
       ),
@@ -447,12 +824,11 @@ export async function getInvestigation(entityId: string): Promise<Investigation 
         .map((n) => n.id),
     }
 
-    // Build connected entities from graph neighbor nodes
     const connectedEntities: Entity[] = graphData.nodes
-      .filter((n) => n.id !== entityId)
+      .filter((n) => n.id !== entityId && n.nodeType !== "transaction")
       .map((n) => ({
         id: n.id,
-        type: (n.nodeType === "transaction" ? "transaction" : "wallet") as EntityType,
+        type: (n.nodeType === "address" ? "wallet" : n.nodeType) as EntityType,
         label: n.label || `${n.id.slice(0, 8)}…`,
         address: n.id,
         risk: {
@@ -465,39 +841,80 @@ export async function getInvestigation(entityId: string): Promise<Investigation 
         totalTransactions: n.metadata?.transactionCount || 0,
         totalReceived: parseFloat(n.metadata?.totalReceivedBtc || "0"),
         totalSent: parseFloat(n.metadata?.totalSentBtc || "0"),
-        balance: 0,
-        tags: [],
-        connectedEntityIds: [],
+        balance: Math.max(
+          0,
+          parseFloat(n.metadata?.totalReceivedBtc || "0") -
+            parseFloat(n.metadata?.totalSentBtc || "0"),
+        ),
+        tags: n.riskLevel ? [n.riskLevel.toLowerCase()] : [],
+        connectedEntityIds: [entityId],
       }))
 
-    // Build transactions from graph edges
+    const txNodes = graphData.nodes.filter((n) => n.nodeType === "transaction")
     const relatedTransactions: Transaction[] = []
-    const edgeTxs = graphData.edges.flatMap((e) =>
-      e.transactions.map((tx) => ({
-        txid: tx.transactionId,
-        timestamp: tx.timestamp || "",
-        amount: parseFloat(tx.valueBtc || "0"),
-        fee: 0,
-        confirmations: 6,
-        block: 0,
-        inputs: [{ address: e.source, amount: parseFloat(tx.valueBtc || "0") }],
-        outputs: [{ address: e.target, amount: parseFloat(tx.valueBtc || "0") }],
-        network: {
-          ip: "—",
-          port: 8333,
-          asn: "—",
-          asnOrg: "—",
-          country: "Unknown",
-          countryCode: "XX",
-          firstSeen: "",
-          lastSeen: "",
-        },
-        relatedEntityIds: [e.source, e.target],
-      })),
+
+    const edgeTxs = await Promise.all(
+      txNodes.slice(0, 10).map(async (t) => {
+        const full = await apiGetTransaction(t.id, analysisId).catch(() => null)
+        if (full) {
+          const netEvent = full.networkEvents?.[0]
+          return {
+            txid: full.transactionId,
+            timestamp: full.timestamp || "",
+            amount: parseFloat(full.totalOutputValueBtc || full.totalInputValueBtc || "0"),
+            fee: parseFloat(full.feeBtc || "0"),
+            confirmations: 6,
+            block: full.blockHeight || 0,
+            inputs: (full.inputs || []).map((i) => ({
+              entityId: i.inputAddress,
+              address: i.inputAddress || "Unknown",
+              amount: parseFloat(i.inputValueBtc || "0"),
+            })),
+            outputs: (full.outputs || []).map((o) => ({
+              entityId: o.outputAddress,
+              address: o.outputAddress || "Unknown",
+              amount: parseFloat(o.outputValueBtc || "0"),
+            })),
+            network: {
+              ip: netEvent?.srcIp || "—",
+              port: netEvent?.srcPort || 8333,
+              asn: netEvent?.asn ? String(netEvent.asn) : "—",
+              asnOrg: netEvent?.asn ? `AS${netEvent.asn}` : "Unspecified Network Telemetry",
+              country: netEvent?.country || "Unknown",
+              countryCode: (netEvent?.country || "XX").slice(0, 2).toUpperCase(),
+              firstSeen: full.timestamp || "",
+              lastSeen: full.timestamp || "",
+            },
+            relatedEntityIds: [entityId],
+            riskScore: full.riskScore ? Math.round(full.riskScore * 100) : undefined,
+            severity: (full.riskLevel?.toLowerCase() as Severity) || undefined,
+          }
+        }
+        return {
+          txid: t.id,
+          timestamp: "",
+          amount: 0,
+          fee: 0,
+          confirmations: 6,
+          block: 0,
+          inputs: [],
+          outputs: [],
+          network: {
+            ip: "—",
+            port: 8333,
+            asn: "—",
+            asnOrg: "Unspecified Network Telemetry",
+            country: "Unknown",
+            countryCode: "XX",
+            firstSeen: "",
+            lastSeen: "",
+          },
+          relatedEntityIds: [entityId],
+        }
+      }),
     )
     relatedTransactions.push(...edgeTxs)
 
-    // Build timeline events
     const timeline: TimelineEvent[] = relatedTransactions.map((t, idx) => ({
       id: `tl-${idx}`,
       timestamp: t.timestamp || new Date().toISOString(),
@@ -507,7 +924,6 @@ export async function getInvestigation(entityId: string): Promise<Investigation 
       txid: t.txid,
     }))
 
-    // Build evidence from graph evidence and SHAP explanations
     const evidence: EvidenceItem[] = [
       ...(addr.mlResult?.graphEvidence || []).map((ge, idx) => ({
         id: `ev-ge-${idx}`,
@@ -564,73 +980,86 @@ export async function search(query: string): Promise<SearchResult[]> {
 
   const results: SearchResult[] = []
 
-  // Direct lookup attempts
-  try {
-    const tx = await apiGetTransaction(q).catch(() => null)
-    if (tx) {
-      results.push({
-        id: tx.transactionId,
-        kind: "transaction",
-        label: `TX ${tx.transactionId.slice(0, 12)}…`,
-        sublabel: `${tx.totalOutputValueBtc || tx.totalInputValueBtc || "0"} BTC`,
-        route: `/transaction/${tx.transactionId}`,
-      })
+  const isAddressCandidate = q.length >= 26 && /^(1|3|bc1|tb1|bcrt)/i.test(q)
+  const isTxidCandidate = /^[0-9a-fA-F]{64}$/.test(q)
+
+  if (isTxidCandidate) {
+    try {
+      const tx = await apiGetTransaction(q).catch(() => null)
+      if (tx) {
+        results.push({
+          id: tx.transactionId,
+          kind: "transaction",
+          label: `TX ${tx.transactionId.slice(0, 12)}…`,
+          sublabel: `${tx.totalOutputValueBtc || tx.totalInputValueBtc || "0"} BTC`,
+          route: `/investigation/${tx.transactionId}?entityType=transaction`,
+        })
+      }
+    } catch {
+      // Lookup skipped
     }
-  } catch {
-    // TX lookup skipped
   }
 
-  try {
-    const addr = await getAddress(q).catch(() => null)
-    if (addr) {
-      results.push({
-        id: addr.addressId,
-        kind: "entity",
-        label: `Address ${addr.addressId.slice(0, 12)}…`,
-        sublabel: `${addr.totalReceivedBtc || "0"} BTC Received`,
-        route: `/investigation/${addr.addressId}`,
-      })
+  if (isAddressCandidate) {
+    try {
+      const addr = await getAddress(q).catch(() => null)
+      if (addr) {
+        results.push({
+          id: addr.addressId,
+          kind: "entity",
+          label: `Address ${addr.addressId.slice(0, 12)}…`,
+          sublabel: `${addr.totalReceivedBtc || "0"} BTC Received`,
+          route: `/investigation/${addr.addressId}?entityType=wallet`,
+        })
+      }
+    } catch {
+      // Lookup skipped
     }
-  } catch {
-    // Address lookup skipped
   }
 
-  // Search active dataset listings
-  try {
-    const { datasetId } = await getActiveContext()
-    if (datasetId && results.length < 5) {
-      const [txs, addrs] = await Promise.all([
-        listTransactions(datasetId, { page: 1, pageSize: 20 }),
-        listAddresses(datasetId, { page: 1, pageSize: 20 }),
-      ])
+  if (q.length >= 2) {
+    try {
+      const { datasetId } = await getActiveContext()
+      if (datasetId && results.length < 5) {
+        const [txs, addrs] = await Promise.all([
+          listTransactions(datasetId, { page: 1, pageSize: 20 }),
+          listAddresses(datasetId, { page: 1, pageSize: 20 }),
+        ])
 
-      const qLower = q.toLowerCase()
-      for (const t of txs.data || []) {
-        if (t.transactionId.toLowerCase().includes(qLower) && !results.some((r) => r.id === t.transactionId)) {
-          results.push({
-            id: t.transactionId,
-            kind: "transaction",
-            label: `TX ${t.transactionId.slice(0, 12)}…`,
-            sublabel: `${t.totalOutputValueBtc || "0"} BTC`,
-            route: `/transaction/${t.transactionId}`,
-          })
+        const qLower = q.toLowerCase()
+        for (const t of txs.data || []) {
+          if (
+            t.transactionId.toLowerCase().includes(qLower) &&
+            !results.some((r) => r.id === t.transactionId)
+          ) {
+            results.push({
+              id: t.transactionId,
+              kind: "transaction",
+              label: `TX ${t.transactionId.slice(0, 12)}…`,
+              sublabel: `${t.totalOutputValueBtc || "0"} BTC`,
+              route: `/investigation/${t.transactionId}?entityType=transaction`,
+            })
+          }
+        }
+
+        for (const a of addrs.data || []) {
+          if (
+            a.addressId.toLowerCase().includes(qLower) &&
+            !results.some((r) => r.id === a.addressId)
+          ) {
+            results.push({
+              id: a.addressId,
+              kind: "entity",
+              label: `Address ${a.addressId.slice(0, 12)}…`,
+              sublabel: `${a.totalReceivedBtc || "0"} BTC Received`,
+              route: `/investigation/${a.addressId}?entityType=wallet`,
+            })
+          }
         }
       }
-
-      for (const a of addrs.data || []) {
-        if (a.addressId.toLowerCase().includes(qLower) && !results.some((r) => r.id === a.addressId)) {
-          results.push({
-            id: a.addressId,
-            kind: "entity",
-            label: `Address ${a.addressId.slice(0, 12)}…`,
-            sublabel: `${a.totalReceivedBtc || "0"} BTC Received`,
-            route: `/investigation/${a.addressId}`,
-          })
-        }
-      }
+    } catch {
+      // Listing search skipped
     }
-  } catch {
-    // Listing search skipped
   }
 
   return results.slice(0, 8)
@@ -638,42 +1067,78 @@ export async function search(query: string): Promise<SearchResult[]> {
 
 /**
  * Uploads a real dataset file and immediately triggers an asynchronous ML analysis run.
+ * Sets and maintains authoritative active context across dataset and analysis lifecycle.
  */
 export async function uploadAndAnalyzeDataset(
   file: File,
   name: string,
   onProgress?: (stage: "uploading" | "processing" | "completed" | "failed", pct: number) => void,
+  modelId?: string,
+  signal?: AbortSignal,
 ): Promise<{ datasetId: string; analysisId: string }> {
   onProgress?.("uploading", 30)
   const uploadRes = await apiUploadDataset(file, name)
+  const datasetId = uploadRes.datasetId
+  setActiveContext(datasetId, undefined)
   onProgress?.("uploading", 100)
 
   onProgress?.("processing", 10)
-  const analysisRes = await apiTriggerAnalysis(uploadRes.datasetId)
+  const analysisRes = await apiTriggerAnalysis(datasetId, {
+    modelId: modelId || undefined,
+  })
   const analysisId = analysisRes.analysisId
+  setActiveContext(datasetId, analysisId)
 
   // Poll analysis status until completion or failure
   const startTime = Date.now()
   const timeoutMs = 120_000 // 2 minutes
+  let consecutiveNetworkErrors = 0
 
   while (Date.now() - startTime < timeoutMs) {
-    await new Promise((res) => setTimeout(res, 1500))
-    try {
-      const statusRes = await getAnalysis(analysisId)
-      if (statusRes.status === "completed") {
-        onProgress?.("completed", 100)
-        return { datasetId: uploadRes.datasetId, analysisId }
-      }
-      if (statusRes.status === "failed") {
-        onProgress?.("failed", 100)
-        throw new Error(statusRes.errorMessage || "Analysis pipeline failed")
-      }
-      onProgress?.("processing", Math.min(90, Math.round(((Date.now() - startTime) / 10000) * 100)))
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("failed")) throw err
+    if (signal?.aborted) {
+      throw new DOMException("Analysis polling aborted", "AbortError")
     }
+
+    await new Promise((res) => setTimeout(res, 1500))
+
+    if (signal?.aborted) {
+      throw new DOMException("Analysis polling aborted", "AbortError")
+    }
+
+    let statusRes: import("@/api").AnalysisSummary
+    try {
+      statusRes = await getAnalysis(analysisId)
+      consecutiveNetworkErrors = 0
+    } catch (err) {
+      if (signal?.aborted) {
+        throw new DOMException("Analysis polling aborted", "AbortError")
+      }
+      consecutiveNetworkErrors++
+      if (consecutiveNetworkErrors >= 3) {
+        onProgress?.("failed", 100)
+        throw new Error("Backend connection lost while polling analysis status.")
+      }
+      continue
+    }
+
+    if (statusRes.status === "completed") {
+      setActiveContext(datasetId, analysisId)
+      onProgress?.("completed", 100)
+      return { datasetId, analysisId }
+    }
+
+    if (statusRes.status === "failed") {
+      onProgress?.("failed", 100)
+      throw new Error(statusRes.errorMessage || "Analysis pipeline failed")
+    }
+
+    onProgress?.(
+      "processing",
+      Math.min(90, Math.round(((Date.now() - startTime) / 10000) * 100)),
+    )
   }
 
+  setActiveContext(datasetId, analysisId)
   onProgress?.("completed", 100)
-  return { datasetId: uploadRes.datasetId, analysisId }
+  return { datasetId, analysisId }
 }

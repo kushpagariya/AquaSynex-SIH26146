@@ -12,11 +12,7 @@ export default function App() {
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/dataset" element={<DatasetPage />} />
       <Route path="/alerts" element={<AlertsPage />} />
-      {/* Investigate nav lands on the highest-risk entity by default */}
-      <Route
-        path="/investigation"
-        element={<Navigate to="/investigation/e-001" replace />}
-      />
+      <Route path="/investigation" element={<InvestigationPage />} />
       <Route path="/investigation/:entityId" element={<InvestigationPage />} />
       <Route path="/transaction/:txid" element={<TransactionPage />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

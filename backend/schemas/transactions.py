@@ -1,7 +1,7 @@
 """Transaction schemas matching docs/backend/request-response-schemas.md."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from backend.schemas.common import CamelModel
 from backend.schemas.ml_results import MLResultSummary
 
@@ -38,4 +38,5 @@ class TransactionDetail(TransactionSummary):
     label: Optional[str] = None
     inputs: List[TransactionInputDetail] = []
     outputs: List[TransactionOutputDetail] = []
+    network_events: List[Dict[str, Any]] = []
     ml_result: Optional[MLResultSummary] = None

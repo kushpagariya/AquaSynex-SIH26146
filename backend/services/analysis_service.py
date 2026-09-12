@@ -14,7 +14,11 @@ from backend.db.connection import get_db_connection, get_db_lock
 from backend.db.queries import analyses as analysis_queries
 from backend.db.queries import datasets as dataset_queries
 from backend.schemas.analyses import AnalysisConfigSchema
-from backend.services.model_service import is_model_available
+from backend.services.model_service import (
+    DEFAULT_EXECUTABLE_MODEL_ID,
+    is_model_available,
+    is_model_executable,
+)
 from backend.services.pipeline_service import PipelineService
 from backend.utils.errors import (
     DatasetAnalysisRunningError,
@@ -121,9 +125,9 @@ class AnalysisService:
         """Background worker executing ML analysis and calculating summary risk stats."""
         try:
             logger.info(f"Starting analysis run {analysis_id}...")
-            conn = get_db_connection()
-            self.conn = conn
-            self.pipeline_service.conn = conn
+            if self.conn is None:
+                self.conn = get_db_connection()
+            self.pipeline_service.conn = self.conn
             with get_db_lock():
                 analysis_queries.update_analysis_status(self.conn, analysis_id, status="running")
 

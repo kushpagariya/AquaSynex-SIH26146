@@ -18,14 +18,17 @@ export function GlobalSearch() {
       setResults([])
       return
     }
-    search(query).then((r) => {
-      if (!cancelled) {
-        setResults(r)
-        setActive(0)
-      }
-    })
+    const timer = setTimeout(() => {
+      search(query).then((r) => {
+        if (!cancelled) {
+          setResults(r)
+          setActive(0)
+        }
+      })
+    }, 300)
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
   }, [query])
 

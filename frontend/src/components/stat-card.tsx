@@ -9,12 +9,14 @@ export function StatCard({
   delta,
   icon: Icon,
   accent = "default",
+  onClick,
 }: {
   label: string
   value: number | string
   delta?: number
   icon: ComponentType<{ className?: string }>
   accent?: "default" | "critical" | "high" | "accent"
+  onClick?: () => void
 }) {
   const accentColor =
     accent === "critical"
@@ -28,7 +30,13 @@ export function StatCard({
   const up = (delta ?? 0) >= 0
 
   return (
-    <div className="rounded-[var(--radius-panel)] border border-line bg-panel p-4">
+    <div
+      onClick={onClick}
+      className={cn(
+        "rounded-[var(--radius-panel)] border border-line bg-panel p-4 transition-colors",
+        onClick && "cursor-pointer hover:bg-panel-2 hover:border-line-soft",
+      )}
+    >
       <div className="flex items-start justify-between">
         <span className="text-xs font-medium uppercase tracking-wide text-fg-subtle">
           {label}

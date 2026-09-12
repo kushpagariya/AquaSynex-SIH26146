@@ -69,12 +69,14 @@ export function DashboardPage() {
               value={stats.totalTransactions}
               delta={stats.deltas.transactions}
               icon={Activity}
+              onClick={() => navigate("/dataset")}
             />
             <StatCard
               label="Entities"
               value={stats.totalEntities}
               delta={stats.deltas.entities}
               icon={Users}
+              onClick={() => navigate("/investigation")}
             />
             <StatCard
               label="Active Alerts"
@@ -82,6 +84,7 @@ export function DashboardPage() {
               delta={stats.deltas.alerts}
               icon={Bell}
               accent="high"
+              onClick={() => navigate("/alerts")}
             />
             <StatCard
               label="High Risk"
@@ -89,10 +92,11 @@ export function DashboardPage() {
               delta={stats.deltas.highRisk}
               icon={ShieldAlert}
               accent="critical"
+              onClick={() => navigate("/alerts")}
             />
           </div>
 
-          <Panel>
+          <Panel className="min-w-0">
             <PanelHeader
               title="Anomaly / Risk Overview"
               subtitle="Hourly transaction volume with detected anomalies"
@@ -110,13 +114,13 @@ export function DashboardPage() {
                 </div>
               }
             />
-            <PanelBody>
+            <PanelBody className="min-w-0">
               <AnomalyOverview series={stats.anomalySeries} />
             </PanelBody>
           </Panel>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <Panel className="xl:col-span-2">
+            <Panel className="min-w-0 xl:col-span-2">
               <PanelHeader
                 title="Recent Suspicious Activity"
                 subtitle="Highest-priority alerts in the queue"
@@ -134,20 +138,36 @@ export function DashboardPage() {
               <AlertTable alerts={alerts.slice(0, 5)} compact />
             </Panel>
 
-            <Panel>
+            <Panel className="min-w-0">
               <PanelHeader
                 title="Processing Status"
                 icon={<CircleCheck className="size-4" />}
               />
               <PanelBody className="space-y-4">
-                <ProcessingRow label="Ingestion" state="Completed" done />
-                <ProcessingRow label="Entity resolution" state="Completed" done />
-                <ProcessingRow label="Risk scoring" state="Completed" done />
-                <ProcessingRow label="Graph build" state="Completed" done />
+                <ProcessingRow
+                  label="Ingestion"
+                  state={stats.processingStatus?.ingestion ? "Completed" : stats.totalTransactions > 0 ? "In progress" : "Idle"}
+                  done={stats.processingStatus?.ingestion}
+                />
+                <ProcessingRow
+                  label="Entity resolution"
+                  state={stats.processingStatus?.entityResolution ? "Completed" : stats.totalTransactions > 0 ? "In progress" : "Idle"}
+                  done={stats.processingStatus?.entityResolution}
+                />
+                <ProcessingRow
+                  label="Risk scoring"
+                  state={stats.processingStatus?.riskScoring ? "Completed" : stats.totalTransactions > 0 ? "In progress" : "Idle"}
+                  done={stats.processingStatus?.riskScoring}
+                />
+                <ProcessingRow
+                  label="Graph build"
+                  state={stats.processingStatus?.graphBuild ? "Completed" : stats.totalTransactions > 0 ? "In progress" : "Idle"}
+                  done={stats.processingStatus?.graphBuild}
+                />
                 <div className="rounded-md border border-line bg-panel-2 p-3">
                   <p className="text-xs text-fg-subtle">Last processed</p>
                   <p className="mt-0.5 font-mono-id text-sm text-fg">
-                    {formatDateTime(new Date().toISOString())}
+                    {stats.lastProcessed ? formatDateTime(stats.lastProcessed) : "No dataset processed yet"}
                   </p>
                   <p className="mt-2 text-xs text-fg-subtle">Anomalies detected</p>
                   <p className="mt-0.5 font-mono-id text-sm text-risk-high">

@@ -174,6 +174,13 @@ export interface DashboardStats {
   highRiskEntities: number
   activeAlerts: number
   anomaliesDetected: number
+  lastProcessed?: string
+  processingStatus?: {
+    ingestion: boolean
+    entityResolution: boolean
+    riskScoring: boolean
+    graphBuild: boolean
+  }
   deltas: {
     transactions: number
     entities: number
@@ -198,6 +205,7 @@ export interface DatasetInfo {
     blocks: number
     dateRange: { from: string; to: string }
     flagged: number
+    span?: string
   }
   error?: string
 }

@@ -7,6 +7,19 @@ from backend.config import settings
 from backend.schemas.models import ModelInfo
 
 
+EXECUTABLE_MODELS = {
+    "aquasynex_xgb_binary_v1",
+    "aquasynex_v1",
+    "aquasynex_catboost_multiclass_v1",
+}
+DEFAULT_EXECUTABLE_MODEL_ID = "aquasynex_xgb_binary_v1"
+
+
+def is_model_executable(model_id: str) -> bool:
+    """Return True if model has executable production artifacts."""
+    return model_id in EXECUTABLE_MODELS
+
+
 def get_available_models() -> List[ModelInfo]:
     """Discover available ML models from configuration and model artifacts directory."""
     models: List[ModelInfo] = [
@@ -17,6 +30,8 @@ def get_available_models() -> List[ModelInfo]:
             model_type="anomaly_detection",
             feature_schema_version="1.0.0",
             training_completed_at=datetime(2026, 9, 11, 10, 0, 0, tzinfo=timezone.utc),
+            description="Placeholder model (not executable)",
+            is_executable=False,
         )
     ]
 

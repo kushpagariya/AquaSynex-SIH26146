@@ -6,7 +6,7 @@ DuckDB opens one connection per process; thread-safe execution lock is used for 
 
 from contextlib import contextmanager
 import threading
-from typing import Generator, Optional
+from typing import Any, Generator, Optional
 import duckdb
 from backend.config import settings
 from backend.db.migrations import run_migrations
@@ -45,6 +45,95 @@ def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
             raise DatabaseUnavailableError(f"Cannot access DuckDB at {target_path}: {exc}") from exc
 
 
+class ThreadSafeRelation:
+    """Thread-safe proxy wrapping DuckDB relation queries with RLock."""
+
+    def __init__(self, rel: Any, lock: threading.RLock):
+        self._rel = rel
+        self._lock = lock
+
+    def fetchone(self) -> Any:
+        with self._lock:
+            return self._rel.fetchone()
+
+    def fetchall(self) -> Any:
+        with self._lock:
+            return self._rel.fetchall()
+
+    def df(self) -> Any:
+        with self._lock:
+            return self._rel.df()
+
+    def pl(self) -> Any:
+        with self._lock:
+            return self._rel.pl()
+
+    def arrow(self) -> Any:
+        with self._lock:
+            return self._rel.arrow()
+
+    @property
+    def description(self) -> Any:
+        with self._lock:
+            return self._rel.description
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._rel, name)
+        if callable(attr):
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                with self._lock:
+                    return attr(*args, **kwargs)
+            return wrapper
+        return attr
+
+
+class ThreadSafeConnection:
+    """Thread-safe proxy wrapping DuckDB connection and cursor execution with RLock."""
+
+    def __init__(self, conn: duckdb.DuckDBPyConnection, lock: threading.RLock):
+        self._conn = conn
+        self._lock = lock
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            res = self._conn.execute(*args, **kwargs)
+            if res is self._conn:
+                return self
+            return ThreadSafeRelation(res, self._lock)
+
+    def cursor(self) -> "ThreadSafeConnection":
+        with self._lock:
+            return ThreadSafeConnection(self._conn.cursor(), self._lock)
+
+    def begin(self) -> Any:
+        with self._lock:
+            return self._conn.begin()
+
+    def commit(self) -> Any:
+        with self._lock:
+            return self._conn.commit()
+
+    def rollback(self) -> Any:
+        with self._lock:
+            return self._conn.rollback()
+
+    def close(self) -> None:
+        with self._lock:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._conn, name)
+        if callable(attr):
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                with self._lock:
+                    return attr(*args, **kwargs)
+            return wrapper
+        return attr
+
+
 def get_db_connection() -> duckdb.DuckDBPyConnection:
     """Get a thread-safe DuckDB cursor for the current thread."""
     global _connection
@@ -53,7 +142,8 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
             init_db()
     if not hasattr(_local, "cursor") or _local.cursor is None:
         with _lock:
-            _local.cursor = _connection.cursor()
+            raw_cursor = _connection.cursor()
+            _local.cursor = ThreadSafeConnection(raw_cursor, _lock)
     return _local.cursor
 
 

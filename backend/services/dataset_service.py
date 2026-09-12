@@ -478,10 +478,15 @@ class DatasetService:
         # Drop temporary view
         self.conn.execute(f"DROP VIEW IF EXISTS {temp_view}")
 
+        addr_count_res = self.conn.execute("SELECT COUNT(*) FROM addresses WHERE dataset_id = ?", [dataset_id]).fetchone()
+        address_count = addr_count_res[0] if addr_count_res else 0
+
         # Update dataset status to 'ready'
         validation_summary = {
             "rejectedRows": max(0, row_count - canonical_tx_count),
             "warnedRows": 0,
+            "addressCount": address_count,
+            "unique_addresses": address_count,
             "fieldCoverage": {f: 1.0 for f in available_fields},
             "analysisCapability": {
                 "graphAnalysis": bool(out_addr_col or in_addr_col or nested_out_addr_col or nested_in_addr_col),
@@ -499,7 +504,7 @@ class DatasetService:
             available_fields=available_fields,
             validation_summary=validation_summary,
         )
-        logger.info(f"Dataset {dataset_id} successfully ingested with {canonical_tx_count} transactions.")
+        logger.info(f"Dataset {dataset_id} successfully ingested with {canonical_tx_count} transactions and {address_count} addresses.")
 
     def get_dataset(self, dataset_id: str) -> Dict[str, Any]:
         """Retrieve dataset details."""

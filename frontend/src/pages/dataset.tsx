@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   UploadCloud,
   FileCheck2,
@@ -9,10 +10,15 @@ import {
   Wallet,
   Flag,
   CalendarRange,
+  Activity,
+  Bell,
+  Fingerprint,
+  LayoutDashboard,
 } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel"
 import { getDatasetInfo, uploadAndAnalyzeDataset } from "@/data/service"
+import { listModels, type ModelInfo } from "@/api"
 import type { DatasetInfo, DatasetStage } from "@/data/types"
 import { formatDateTime, formatNumber, cn } from "@/lib/utils"
 
@@ -37,33 +43,71 @@ function formatBytes(bytes: number): string {
 }
 
 export function DatasetPage() {
+  const navigate = useNavigate()
   const [existing, setExisting] = useState<DatasetInfo | null>(null)
   const [stage, setStage] = useState<DatasetStage>("idle")
   const [progress, setProgress] = useState(0)
   const [fileName, setFileName] = useState<string>("")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [models, setModels] = useState<ModelInfo[]>([])
+  const [selectedModelId, setSelectedModelId] = useState<string>("aquasynex_xgb_binary_v1")
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     getDatasetInfo().then(setExisting).catch(() => setExisting(null))
+    listModels()
+      .then((mList) => {
+        setModels(mList)
+        const defaultExec =
+          mList.find((m) => m.modelId === "aquasynex_xgb_binary_v1" && m.isExecutable !== false) ||
+          mList.find((m) => m.isExecutable !== false)
+        if (defaultExec) {
+          setSelectedModelId(defaultExec.modelId)
+        }
+      })
+      .catch(() => {
+        setSelectedModelId("aquasynex_xgb_binary_v1")
+      })
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
   }, [])
 
   async function handleIngest(file: File) {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const ac = new AbortController()
+    abortControllerRef.current = ac
+
     setFileName(file.name)
     setStage("uploading")
     setProgress(10)
     setErrorMsg(null)
 
     try {
-      await uploadAndAnalyzeDataset(file, file.name, (s, pct) => {
-        setStage(s)
-        setProgress(pct)
-      })
+      await uploadAndAnalyzeDataset(
+        file,
+        file.name,
+        (s, pct) => {
+          setStage(s)
+          setProgress(pct)
+        },
+        selectedModelId,
+        ac.signal,
+      )
       const refreshed = await getDatasetInfo()
       setExisting(refreshed)
       setStage("completed")
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return
+      }
       setStage("failed")
       setErrorMsg(err instanceof Error ? err.message : "Dataset ingestion failed")
     }
@@ -87,6 +131,62 @@ export function DatasetPage() {
               icon={<UploadCloud className="size-4" />}
             />
             <PanelBody>
+              <div className="mb-5 rounded-md border border-line bg-panel-2 p-3.5">
+                <label htmlFor="model-select" className="mb-1.5 block text-xs font-medium text-fg">
+                  ML Analysis Model
+                </label>
+                <select
+                  id="model-select"
+                  value={selectedModelId}
+                  disabled={active}
+                  onChange={(e) => setSelectedModelId(e.target.value)}
+                  className="w-full rounded border border-line bg-panel px-3 py-2 text-xs font-mono-id text-fg focus:border-accent focus:outline-none disabled:opacity-60"
+                  aria-label="Select ML model for analysis"
+                >
+                  {models.length > 0 ? (
+                    models.map((m) => {
+                      const isPlaceholder = m.isExecutable === false || m.modelId === "isolation_forest_v1"
+                      return (
+                        <option key={m.modelId} value={m.modelId} disabled={isPlaceholder}>
+                          {m.modelId === "aquasynex_xgb_binary_v1"
+                            ? "aquasynex_xgb_binary_v1 — XGBoost Binary Risk Detector (Production)"
+                            : m.modelId === "aquasynex_catboost_multiclass_v1"
+                              ? "aquasynex_catboost_multiclass_v1 — CatBoost Typology Attribution"
+                              : m.modelId === "aquasynex_v1"
+                                ? "aquasynex_v1 — Full Pipeline (XGBoost + CatBoost + TreeSHAP)"
+                                : m.modelId}
+                          {isPlaceholder ? " [Placeholder - Disabled]" : ""}
+                        </option>
+                      )
+                    })
+                  ) : (
+                    <>
+                      <option value="aquasynex_xgb_binary_v1">
+                        aquasynex_xgb_binary_v1 — XGBoost Binary Risk Detector (Production)
+                      </option>
+                      <option value="aquasynex_catboost_multiclass_v1">
+                        aquasynex_catboost_multiclass_v1 — CatBoost Typology Attribution
+                      </option>
+                      <option value="aquasynex_v1">
+                        aquasynex_v1 — Full Pipeline (XGBoost + CatBoost + TreeSHAP)
+                      </option>
+                      <option value="isolation_forest_v1" disabled>
+                        isolation_forest_v1 [Placeholder - Disabled]
+                      </option>
+                    </>
+                  )}
+                </select>
+                <p className="mt-1.5 text-[11px] text-fg-subtle">
+                  {selectedModelId === "aquasynex_xgb_binary_v1"
+                    ? "Production 71-feature XGBoost detector with TreeSHAP explanations. Predicts transaction & entity risk scores."
+                    : selectedModelId === "aquasynex_catboost_multiclass_v1"
+                      ? "11-class multiclass CatBoost classifier attributing illicit financial crime typologies."
+                      : selectedModelId === "aquasynex_v1"
+                        ? "Runs full ensemble detection: XGBoost binary scoring + CatBoost typology attribution."
+                        : "Registered machine learning model."}
+                </p>
+              </div>
+
               {!active ? (
                 <div
                   onDragOver={(e) => {
@@ -163,7 +263,67 @@ export function DatasetPage() {
 
                   <StageTracker stage={stage} progress={progress} />
 
-                  {stage === "completed" || stage === "failed" ? (
+                  {stage === "completed" ? (
+                    <div className="space-y-3 rounded-lg border border-risk-low/40 bg-risk-low-soft p-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-risk-low">
+                        <FileCheck2 className="size-5" />
+                        <span>Analysis Completed Successfully</span>
+                      </div>
+                      <p className="text-xs text-fg-subtle">
+                        Dataset ingested and scored with ML model{" "}
+                        <span className="font-mono-id text-fg">{selectedModelId}</span>.
+                      </p>
+                      {existing?.stats ? (
+                        <div className="flex flex-wrap items-center gap-3 py-1 font-mono-id text-xs text-fg-muted">
+                          <span>{formatNumber(existing.stats.transactions)} transactions</span>
+                          <span>•</span>
+                          <span>{formatNumber(existing.stats.addresses)} entities</span>
+                          <span>•</span>
+                          <span className="font-semibold text-risk-high">
+                            {formatNumber(existing.stats.flagged)} flagged anomalies
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => navigate("/alerts")}
+                          className="flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-3.5 py-1.5 text-xs font-semibold text-accent hover:bg-accent/10"
+                        >
+                          <Bell className="size-3.5" />
+                          View Alerts
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate("/investigation")}
+                          className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3.5 py-1.5 text-xs font-medium text-fg hover:bg-panel-2"
+                        >
+                          <Fingerprint className="size-3.5" />
+                          Investigate Results
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate("/dashboard")}
+                          className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3.5 py-1.5 text-xs font-medium text-fg hover:bg-panel-2"
+                        >
+                          <LayoutDashboard className="size-3.5" />
+                          Overview
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStage("idle")
+                            setProgress(0)
+                            setFileName("")
+                            setErrorMsg(null)
+                          }}
+                          className="ml-auto text-xs font-medium text-fg-subtle hover:text-fg hover:underline"
+                        >
+                          Ingest another dataset
+                        </button>
+                      </div>
+                    </div>
+                  ) : stage === "failed" ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -210,7 +370,7 @@ export function DatasetPage() {
                   {existing.stats ? (
                     <div className="grid grid-cols-2 gap-3">
                       <DatasetStat
-                        icon={Activity2}
+                        icon={Activity}
                         label="Transactions"
                         value={formatNumber(existing.stats.transactions)}
                       />
@@ -238,7 +398,7 @@ export function DatasetPage() {
                       <DatasetStat
                         icon={CalendarRange}
                         label="Span"
-                        value="5h"
+                        value={existing.stats.span || "—"}
                       />
                     </div>
                   ) : null}
@@ -324,8 +484,4 @@ function DatasetStat({
       <p className="text-xs text-fg-subtle">{label}</p>
     </div>
   )
-}
-
-function Activity2({ className }: { className?: string }) {
-  return <Database className={className} />
 }

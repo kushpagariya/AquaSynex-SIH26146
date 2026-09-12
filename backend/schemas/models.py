@@ -12,3 +12,5 @@ class ModelInfo(CamelModel):
     model_type: str = "anomaly_detection"  # 'anomaly_detection' | 'classification'
     feature_schema_version: str = "1.0.0"
     training_completed_at: Optional[datetime] = None
+    description: Optional[str] = None
+    is_executable: bool = True

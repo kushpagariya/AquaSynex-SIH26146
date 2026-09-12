@@ -285,6 +285,26 @@ def get_transaction_by_id(
             "predicted_at": ml_data["predicted_at"],
         }
 
+    # Fetch network events if present
+    net_query = """
+    SELECT src_ip, src_port, dst_ip, dst_port, country, asn
+    FROM network_events
+    WHERE transaction_id = ?
+    LIMIT 10
+    """
+    net_rel = conn.execute(net_query, [transaction_id])
+    network_events = [
+        {
+            "src_ip": r[0],
+            "src_port": r[1],
+            "dst_ip": r[2],
+            "dst_port": r[3],
+            "country": r[4],
+            "asn": r[5],
+        }
+        for r in net_rel.fetchall()
+    ]
+
     return {
         "transaction_id": tx_record["transaction_id"],
         "block_height": tx_record.get("block_height"),
@@ -301,5 +321,6 @@ def get_transaction_by_id(
         "risk_level": risk_level,
         "inputs": inputs,
         "outputs": outputs,
+        "network_events": network_events,
         "ml_result": ml_result,
     }
