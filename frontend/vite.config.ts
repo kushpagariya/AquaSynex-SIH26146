@@ -10,10 +10,21 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
+  css: {
+    postcss: {
+      plugins: [],
+    },
+  },
   server: {
     host: true,
     port: 3000,
     strictPort: true,
     allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
   },
 })

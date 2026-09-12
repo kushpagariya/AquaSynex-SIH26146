@@ -3,7 +3,7 @@ import { Bell, Filter } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelHeader } from "@/components/ui/panel"
 import { AlertTable } from "@/components/alert-table"
-import { EmptyState, LoadingState } from "@/components/ui/states"
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { getAlerts } from "@/data/service"
 import type { Alert, AlertStatus, EntityType, Severity } from "@/data/types"
 import { cn } from "@/lib/utils"
@@ -23,6 +23,7 @@ type SortKey = "risk" | "time"
 
 export function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[] | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [severity, setSeverity] = useState<Severity | "all">("all")
   const [status, setStatus] = useState<AlertStatus | "all">("all")
   const [type, setType] = useState<EntityType | "all">("all")
@@ -30,7 +31,11 @@ export function AlertsPage() {
   const [sort, setSort] = useState<SortKey>("risk")
 
   useEffect(() => {
-    getAlerts().then(setAlerts)
+    getAlerts()
+      .then(setAlerts)
+      .catch((err) => {
+        setErrorMsg(err instanceof Error ? err.message : "Failed to load alerts from backend")
+      })
   }, [])
 
   const filtered = useMemo(() => {
@@ -49,7 +54,12 @@ export function AlertsPage() {
 
   return (
     <AppLayout title="Alerts">
-      {!alerts ? (
+      {errorMsg ? (
+        <ErrorState
+          title="Failed to load alerts"
+          description={errorMsg}
+        />
+      ) : !alerts ? (
         <LoadingState label="Loading investigation queue" />
       ) : (
         <div className="space-y-4">
