@@ -14,7 +14,7 @@ The development dataset generated in `data/sample/` (`seed=42`) was audited dire
 |---|---|---|---|
 | **Transaction Conservation** | $\sum \text{inputs} = \sum \text{outputs} + \text{fee}$ | 10,000 / 10,000 transactions | **100% Valid** |
 | **Fee Positivity** | Fee $> 0$ satoshis | 10,000 / 10,000 transactions ($\min: 2,004\text{ sat}$) | **100% Valid** |
-| **Dust Compliance** | Output satoshis $\ge 546$ | 29,214 / 29,214 outputs ($\min: 546\text{ sat}$) | **100% Valid** |
+| **Dust Compliance** | Output satoshis $\ge 546$ | 28,853 / 28,853 outputs ($\min: 546\text{ sat}$) | **100% Valid** |
 | **Referential Integrity** | Orphaned inputs, outputs, net events, labels | 0 orphaned records | **100% Valid** |
 | **Network Sanity** | IPv4 regex, valid ports ($[1, 65535]$), ASNs | 10,000 / 10,000 valid network events | **100% Valid** |
 | **Duplicate Check** | Primary key collisions across all 7 tables | 0 duplicate keys | **100% Valid** |
@@ -154,8 +154,8 @@ Constructed directed multigraph ($V = \text{addresses} \cup \text{txids}$, $E = 
 - **Out-Degree Distribution**: Median: 1.0, 95th Percentile: 2.0, Max: 26
 
 ### Graph Integration of Suspicious Topologies
-- **Suspicious Transactions in Giant Component**: 3,428 / 4,215 (**81.3%**)
-- **Benign Transactions in Giant Component**: 5,785 / 5,785 (**100.0%**)
+- **Suspicious Transactions in Giant Component**: 3,515 / 4,337 (**81.05%**)
+- **Benign Transactions in Giant Component**: 5,663 / 5,663 (**100.0%**)
 
 > **Graph Difficulty Assessment**: Suspicious transactions are **not isolated trivial cliques**. Over 81% of suspicious transactions are deeply embedded within the giant connected component, sharing addresses and change flows with normal entities. Graph algorithms (PageRank, Personalized PageRank from seeds, and Weakly Connected Clustering) will encounter realistic topological complexity.
 

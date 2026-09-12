@@ -215,6 +215,12 @@ def run_feature_pipeline(
     pipeline = FeatureEngineeringPipeline(version="v1.0.0")
     matrix, report = pipeline.build_feature_matrix(canonical_data)
 
+    if not report.get("is_clean", True):
+        raise ValueError(
+            f"Feature matrix failed quality auditing: {report.get('issues', [])}. "
+            f"Nulls: {report.get('null_counts', {})}, Infs: {report.get('inf_counts', {})}"
+        )
+
     pipeline.export_feature_matrix(matrix, output_dir)
     pipeline.register_in_duckdb(matrix, db_path)
 

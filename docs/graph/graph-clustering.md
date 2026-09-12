@@ -15,7 +15,7 @@ Bitcoin's pseudonymous UTXO accounting model allows entities to generate arbitra
 ### 1.1. Multi-Input (Common Spending) Heuristic
 - **Theoretical Basis**: In a standard Bitcoin transaction, all input UTXOs must be signed by private keys possessed or coordinated by the same entity.
 - **Rule**: If a transaction $T$ contains multiple distinct input addresses $\{A_1, A_2, \dots, A_k\}$, all addresses are inferred to belong to the same behavioral cluster.
-- **Limitation / Caveat**: Collaborative transactions (e.g. CoinJoin) violate this heuristic by combining unrelated inputs. In our canonical dataset, standard UTXO spending applies.
+- **Limitation / Caveat**: Collaborative transactions (e.g., CoinJoin) violate this heuristic by combining unrelated inputs. To handle collaborative transactions independently of ground-truth labels (such as `mixing_like`), the clustering flow applies an equal-output heuristic or equivalent structural check (e.g., $\ge 3$ inputs and $\ge 3$ equal-denomination outputs). For detected collaborative transactions, the common-input union operation is skipped so unrelated participants remain separate, while preserving standard multi-input clustering for ordinary transactions.
 
 ### 1.2. Change Address Heuristic
 - **Theoretical Basis**: When a UTXO is spent, remaining value is directed to a newly generated change address owned by the sender.
@@ -33,7 +33,7 @@ For each transaction $T_i$ in ascending chronological order:
    - Query the Union-Find structure using the primary input address.
    - Record `hist_cluster_id`, `hist_cluster_size`, and `hist_cluster_tx_count` *as they exist prior to $T_i$*.
 2. **Multi-Input Union**:
-   - If $k \ge 2$ inputs are present, union their disjoint sets.
+   - If $k \ge 2$ inputs are present, evaluate the structural heuristic: skip union if identified as a collaborative/equal-output transaction; otherwise, union their disjoint sets.
 3. **Change Output Union**:
    - Union any identified change address outputs into the active input cluster.
 4. **Activity Update**:

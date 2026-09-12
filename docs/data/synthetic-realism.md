@@ -23,7 +23,7 @@ In **Phase 2.5D**, we hardened the generator to eliminate all deterministic shor
 - **`rel_change_value_ratio` Single-Feature Model**: Dropped from **0.9648 ROC-AUC / 0.9705 PR-AUC** (v1) to **0.6985 ROC-AUC / 0.6703 PR-AUC** (v2 CatBoost). Normal variance expanded from $\sigma = 0.0000$ to $\sigma = 0.2344$ across $[0.0000, 0.8499]$.
 - **Network Port Shortcut Neutralized**: Single-feature ROC-AUC for `net_is_standard_bitcoin_port` collapsed from **0.6994** to **0.5107** (near chance).
 - **Graph Link Analysis Signal Preserved**: Graph-only feature set (6 features) achieves **0.8695 ROC-AUC / 0.8857 PR-AUC** (CatBoost), proving graph link analysis provides an authentic, independent signal. Removing graph features drops performance from $0.9974$ to $0.9745$.
-- **Permutation Sanity Check**: Train target shuffling collapsed validation performance cleanly to chance (**0.4960 ROC-AUC / 0.4324 PR-AUC**), verifying zero target leakage.
+- **Permutation Sanity Check**: Train target shuffling collapsed validation performance cleanly to chance (**0.4960 ROC-AUC / 0.4324 PR-AUC**), confirming the model responds appropriately to randomized labels without learning trivial artifacts; zero-leakage claims are separately supported by feature lineage, column quarantine, and pipeline provenance audits.
 - **Held-Out Test Partition**: The 15% out-of-time test partition ($N=1,500$) remained **100% frozen and untouched**.
 
 ---

@@ -79,10 +79,10 @@ class Prediction:
 
 | Value | Risk Score Range | Meaning |
 |---|---|---|
-| `low` | [0.0, 0.39] | Low analytical priority |
-| `medium` | [0.40, 0.69] | Warrants attention |
-| `high` | [0.70, 0.89] | Significant risk indicators |
-| `critical` | [0.90, 1.00] | Highest priority for investigation |
+| `low` | [0.0, 0.32) | Low analytical priority |
+| `medium` | [0.32, 0.50) | Warrants attention |
+| `high` | [0.50, 0.67) | Significant risk indicators |
+| `critical` | [0.67, 1.00] | Highest priority for investigation |
 
 > **NOTE**: Risk score thresholds are `DECISION REQUIRED`. See [risk-scoring.md](./risk-scoring.md).
 

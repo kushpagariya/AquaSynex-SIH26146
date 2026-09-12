@@ -32,11 +32,20 @@ class TransactionOutputDetail(CamelModel):
     script_type: Optional[str] = None
 
 
+class NetworkEventSchema(CamelModel):
+    src_ip: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_ip: Optional[str] = None
+    dst_port: Optional[int] = None
+    country: Optional[str] = None
+    asn: Optional[int] = None
+
+
 class TransactionDetail(TransactionSummary):
     block_hash: Optional[str] = None
     transaction_size_bytes: Optional[int] = None
     label: Optional[str] = None
     inputs: List[TransactionInputDetail] = []
     outputs: List[TransactionOutputDetail] = []
-    network_events: List[Dict[str, Any]] = []
+    network_events: List[NetworkEventSchema] = []
     ml_result: Optional[MLResultSummary] = None

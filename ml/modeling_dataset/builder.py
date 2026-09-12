@@ -123,12 +123,20 @@ class ModelingDatasetBuilder:
         ORDER BY c.timestamp_epoch_sec ASC, t.transaction_id ASC
         """
 
+        tab_cnt = con.execute(f"SELECT COUNT(*) FROM read_parquet('{self.tabular_path}')").fetchone()[0]
+        graph_cnt = con.execute(f"SELECT COUNT(*) FROM read_parquet('{self.graph_path}')").fetchone()[0]
+        can_cnt = con.execute(f"SELECT COUNT(*) FROM read_parquet('{self.canonical_tx_path}')").fetchone()[0]
+        lbl_cnt = con.execute(f"SELECT COUNT(*) FROM read_parquet('{self.labels_path}')").fetchone()[0]
+
         df = con.execute(query).df()
         con.close()
 
         total_rows = len(df)
-        if total_rows != 10000:
-            raise ValueError(f"Expected 10,000 records after join, but got {total_rows:,}")
+        if not (total_rows == tab_cnt == graph_cnt == can_cnt == lbl_cnt) or total_rows == 0:
+            raise ValueError(
+                f"Inner join dropped rows or input counts mismatch: tabular={tab_cnt}, graph={graph_cnt}, "
+                f"canonical={can_cnt}, labels={lbl_cnt}, joined={total_rows}"
+            )
 
         # Assert no duplicate transaction_ids
         if df["transaction_id"].duplicated().any():

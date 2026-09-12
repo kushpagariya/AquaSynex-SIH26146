@@ -71,7 +71,7 @@ class BipartiteGraphBuilder:
         edge_rows = []
         if not df_in.empty:
             # Join with tx timestamps for temporal edge weighting
-            tx_ts_map = df_tx.set_index(tx_id_col)["timestamp_epoch_sec"].to_dict()
+            tx_ts_map = {str(k).strip().lower(): v for k, v in df_tx.set_index(tx_id_col)["timestamp_epoch_sec"].to_dict().items()}
             for _, r in df_in.iterrows():
                 txid = str(r[in_tx_col]).strip().lower()
                 addr = str(r[in_addr_col]).strip()
@@ -119,7 +119,7 @@ class BipartiteGraphBuilder:
         out_val_col = "output_value_satoshi" if "output_value_satoshi" in df_out.columns else "amount_satoshi"
 
         if not df_out.empty:
-            tx_ts_map = df_tx.set_index(tx_id_col)["timestamp_epoch_sec"].to_dict()
+            tx_ts_map = {str(k).strip().lower(): v for k, v in df_tx.set_index(tx_id_col)["timestamp_epoch_sec"].to_dict().items()}
             for _, r in df_out.iterrows():
                 txid = str(r[out_tx_col]).strip().lower()
                 addr = str(r[out_addr_col]).strip()

@@ -81,9 +81,9 @@ They are computed exclusively by `ml/graph_analysis/graph_metrics.py` and export
 
 ## 4. Integration with Tabular Feature Matrix
 
-In Phase 2.5 (Feature Store Integration), `graph_features.parquet` will be joined on `transaction_id` with `feature_matrix_v1.parquet` (Phase 2.3 tabular features, 40 features):
+In Phase 2.5 (Feature Store Integration), `graph_features.parquet` is joined on `transaction_id` with `feature_matrix_v1.parquet` (40 tabular features). While the graph pipeline exports 11 total columns for analytical observability, exactly 6 are selected as predictive ML features (excluding `hist_cluster_id` and the four duplicate retrospective topology fields):
 
-$$\text{Combined Feature Space} = 40 \text{ Tabular Features} + 11 \text{ Graph Features} = 51 \text{ Predictive Features}$$
+$$\text{Combined Feature Space} = 40 \text{ Tabular Features} + 6 \text{ Predictive Graph Features} = 46 \text{ Frozen Features}$$
 
 ---
 

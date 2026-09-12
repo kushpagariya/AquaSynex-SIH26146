@@ -514,7 +514,8 @@ features:
     leakage_risk: "None"
     reference_time: "T_tx"
     lookback_window: "current"
-    ML_eligible: false  # Requires categorical encoding
+    ML_eligible: true
+    requires_encoding: true
     graph_related: false
     unit: "asn"
     is_canonical: true
@@ -542,7 +543,8 @@ features:
     leakage_risk: "None"
     reference_time: "T_tx"
     lookback_window: "current"
-    ML_eligible: false  # Categorical context field; requires encoding
+    ML_eligible: true
+    requires_encoding: true
     graph_related: false
     unit: "iso_country_code"
     is_canonical: true

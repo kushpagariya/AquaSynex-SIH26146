@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional, Tuple
 import duckdb
 import joblib
@@ -115,17 +116,17 @@ def _extract_config_val(config: Any, snake_key: str, camel_key: str, default: An
 def map_risk_level(risk_score: float) -> str:
     """Map continuous risk probability to standardized risk level.
 
-    Boundary rules (authoritative):
-    - [0.90, 1.00] -> 'critical'
-    - [0.70, 0.90) -> 'high'
-    - [0.40, 0.70) -> 'medium'
-    - [0.00, 0.40) -> 'low'
+    Boundary rules (authoritative, matching production model card):
+    - [0.67, 1.00] -> 'critical'
+    - [0.50, 0.67) -> 'high'
+    - [0.32, 0.50) -> 'medium'
+    - [0.00, 0.32) -> 'low'
     """
-    if risk_score >= 0.90:
+    if risk_score >= 0.67:
         return "critical"
-    if risk_score >= 0.70:
+    if risk_score >= 0.50:
         return "high"
-    if risk_score >= 0.40:
+    if risk_score >= 0.32:
         return "medium"
     return "low"
 
@@ -228,7 +229,13 @@ def _load_dataset_records(
                 pass
 
     # 2. If transactions still empty, check disk in data_dir / dataset_id
-    dataset_dir = Path(data_dir) / dataset_id
+    if not re.match(r"^[a-zA-Z0-9_-]+$", dataset_id):
+        raise DatasetError(f"Invalid dataset_id format: {dataset_id}")
+    safe_data_dir = Path(data_dir).resolve()
+    dataset_dir = (safe_data_dir / dataset_id).resolve()
+    if not (str(dataset_dir) == str(safe_data_dir) or str(dataset_dir).startswith(str(safe_data_dir) + os.sep)):
+        raise DatasetError("Access outside data_dir is forbidden.")
+
     if ("transactions" not in observational or observational["transactions"].empty) and dataset_dir.exists():
         if (dataset_dir / "transactions.parquet").exists():
             ingest_engine = DataIngestionEngine(dataset_id=dataset_id)
@@ -237,8 +244,12 @@ def _load_dataset_records(
         else:
             for cand in dataset_dir.iterdir():
                 if cand.suffix in (".csv", ".parquet"):
+                    cand_path = str(cand).replace(os.sep, "/")
                     with duckdb.connect() as disk_con:
-                        raw_df = disk_con.execute(f"SELECT * FROM '{str(cand).replace(os.sep, '/')}'").fetchdf()
+                        if cand.suffix == ".parquet":
+                            raw_df = disk_con.execute("SELECT * FROM read_parquet(?)", [cand_path]).fetchdf()
+                        else:
+                            raw_df = disk_con.execute("SELECT * FROM read_csv_auto(?)", [cand_path]).fetchdf()
                     normalizer = DataNormalizationEngine(dataset_id=dataset_id)
                     observational = normalizer._decompose_sih_to_canonical(raw_df)
                     break
@@ -248,8 +259,12 @@ def _load_dataset_records(
         for net_name in ["network_events.parquet", "network_events_sample.csv", "network_events.csv"]:
             net_file = dataset_dir / net_name
             if net_file.exists():
+                net_path = str(net_file).replace(os.sep, "/")
                 with duckdb.connect() as disk_con:
-                    observational["network_events"] = disk_con.execute(f"SELECT * FROM '{str(net_file).replace(os.sep, '/')}'").fetchdf()
+                    if net_file.suffix == ".parquet":
+                        observational["network_events"] = disk_con.execute("SELECT * FROM read_parquet(?)", [net_path]).fetchdf()
+                    else:
+                        observational["network_events"] = disk_con.execute("SELECT * FROM read_csv_auto(?)", [net_path]).fetchdf()
                 break
 
     # Enforce non-empty transactions
@@ -284,7 +299,10 @@ def _load_dataset_records(
     elif "size_bytes" not in df_tx.columns and "transaction_size_bytes" in df_tx.columns:
         df_tx["size_bytes"] = df_tx["transaction_size_bytes"]
     if "transaction_size_bytes" not in df_tx.columns:
-        df_tx["transaction_size_bytes"] = 250
+        raise InvalidFeaturesError(
+            f"Dataset '{dataset_id}' is missing required transaction size information ('transaction_size_bytes').",
+            details={"datasetId": dataset_id, "requiredColumn": "transaction_size_bytes"},
+        )
 
     if "fee_satoshi" not in df_tx.columns:
         if "fee" in df_tx.columns:
@@ -292,12 +310,39 @@ def _load_dataset_records(
         elif "total_input_value_satoshi" in df_tx.columns and "total_output_value_satoshi" in df_tx.columns:
             df_tx["fee_satoshi"] = np.maximum(df_tx["total_input_value_satoshi"] - df_tx["total_output_value_satoshi"], 0)
         else:
-            df_tx["fee_satoshi"] = 0
+            raise InvalidFeaturesError(
+                f"Dataset '{dataset_id}' is missing required transaction fee information ('fee_satoshi').",
+                details={"datasetId": dataset_id, "requiredColumn": "fee_satoshi"},
+            )
 
+    imputed_features = set()
     if "input_count" not in df_tx.columns:
-        df_tx["input_count"] = 1
+        if "transaction_inputs" in observational and not observational["transaction_inputs"].empty:
+            df_in = observational["transaction_inputs"]
+            in_tx_key = "transaction_id" if "transaction_id" in df_in.columns else "txid"
+            counts = df_in.groupby(in_tx_key).size()
+            df_tx["input_count"] = df_tx["transaction_id"].map(counts).fillna(1).astype(int)
+            imputed_features.add("tx_input_count")
+        else:
+            raise InvalidFeaturesError(
+                f"Dataset '{dataset_id}' is missing required 'input_count' column and inputs table.",
+                details={"datasetId": dataset_id, "requiredColumn": "input_count"},
+            )
+
     if "output_count" not in df_tx.columns:
-        df_tx["output_count"] = 1
+        if "transaction_outputs" in observational and not observational["transaction_outputs"].empty:
+            df_out = observational["transaction_outputs"]
+            out_tx_key = "transaction_id" if "transaction_id" in df_out.columns else "txid"
+            counts = df_out.groupby(out_tx_key).size()
+            df_tx["output_count"] = df_tx["transaction_id"].map(counts).fillna(1).astype(int)
+            imputed_features.add("tx_output_count")
+        else:
+            raise InvalidFeaturesError(
+                f"Dataset '{dataset_id}' is missing required 'output_count' column and outputs table.",
+                details={"datasetId": dataset_id, "requiredColumn": "output_count"},
+            )
+
+    observational["_imputed_features"] = list(imputed_features)
 
     # Inputs alignment
     if "transaction_inputs" in observational and not observational["transaction_inputs"].empty:
@@ -367,6 +412,7 @@ def run_analysis(
 
     # 2. Extract dataset strictly isolated by dataset_id
     obs = _load_dataset_records(dataset_id, db_path, data_dir)
+    imputed_features = set(obs.get("_imputed_features", []))
 
     # 3. Validate observational records
     validator = DataValidationEngine()
@@ -498,12 +544,12 @@ def run_analysis(
             if feat_name in merged.columns:
                 raw_v = merged[feat_name].iloc[i]
                 if pd.notna(raw_v):
-                    if isinstance(raw_v, (int, np.integer)):
+                    if isinstance(raw_v, (bool, np.bool_)):
+                        feat_val = bool(raw_v)
+                    elif isinstance(raw_v, (int, np.integer)):
                         feat_val = int(raw_v)
                     elif isinstance(raw_v, (float, np.floating)):
                         feat_val = round(float(raw_v), 4)
-                    elif isinstance(raw_v, (bool, np.bool_)):
-                        feat_val = bool(raw_v)
                     else:
                         feat_val = str(raw_v)
             if feat_val is None:
@@ -527,21 +573,22 @@ def run_analysis(
                 raw_val = merged[col].iloc[i]
                 if pd.isna(raw_val):
                     val = None
+                elif isinstance(raw_val, (bool, np.bool_)):
+                    val = bool(raw_val)
                 elif isinstance(raw_val, (int, np.integer)):
                     val = int(raw_val)
                 elif isinstance(raw_val, (float, np.floating)):
                     val = float(raw_val)
-                elif isinstance(raw_val, (bool, np.bool_)):
-                    val = bool(raw_val)
                 else:
                     val = str(raw_val)
 
+                is_imputed = col in imputed_features
                 features_list.append({
                     "feature_name": col,
                     "raw_value": val,
                     "normalized_value": None,
-                    "is_imputed": False,
-                    "imputation_method": None,
+                    "is_imputed": is_imputed,
+                    "imputation_method": "derived_from_inputs_outputs" if is_imputed else None,
                 })
 
         # Graph-derived investigator evidence

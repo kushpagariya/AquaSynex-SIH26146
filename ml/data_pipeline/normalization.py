@@ -81,8 +81,9 @@ class DataNormalizationEngine:
                 "log_total_value_satoshi", "log_fee_satoshi", "ingested_at"
             ]
             # Keep any extra optional columns (e.g. txid)
-            extra_cols = [c for c in tx_norm.columns if c not in canonical_cols]
-            canonical["transactions"] = tx_norm[canonical_cols + extra_cols]
+            canonical_cols_present = [c for c in canonical_cols if c in tx_norm.columns]
+            extra_cols = [c for c in tx_norm.columns if c not in canonical_cols_present]
+            canonical["transactions"] = tx_norm[canonical_cols_present + extra_cols]
         else:
             canonical["transactions"] = pd.DataFrame()
 
@@ -96,7 +97,7 @@ class DataNormalizationEngine:
 
             # Canonical surrogate primary key
             if "input_id" not in in_norm.columns:
-                in_norm["input_id"] = in_norm["transaction_id"] + ":" + in_norm["input_index"].astype(str)
+                in_norm["input_id"] = in_norm["transaction_id"] + ":" + in_norm["input_index"].astype(int).astype(str)
 
             # Address column normalization
             if "address" in in_norm.columns and "input_address" not in in_norm.columns:
@@ -112,8 +113,9 @@ class DataNormalizationEngine:
                 "input_id", "transaction_id", "dataset_id", "input_index",
                 "input_address", "input_value_satoshi", "input_value_btc"
             ]
-            extra_in_cols = [c for c in in_norm.columns if c not in canonical_in_cols]
-            canonical["transaction_inputs"] = in_norm[canonical_in_cols + extra_in_cols]
+            canonical_in_cols_present = [c for c in canonical_in_cols if c in in_norm.columns]
+            extra_in_cols = [c for c in in_norm.columns if c not in canonical_in_cols_present]
+            canonical["transaction_inputs"] = in_norm[canonical_in_cols_present + extra_in_cols]
         else:
             canonical["transaction_inputs"] = pd.DataFrame()
 
@@ -127,7 +129,7 @@ class DataNormalizationEngine:
 
             # Canonical surrogate primary key
             if "output_id" not in out_norm.columns:
-                out_norm["output_id"] = out_norm["transaction_id"] + ":" + out_norm["output_index"].astype(str)
+                out_norm["output_id"] = out_norm["transaction_id"] + ":" + out_norm["output_index"].astype(int).astype(str)
 
             # Address column normalization
             if "address" in out_norm.columns and "output_address" not in out_norm.columns:
@@ -145,8 +147,9 @@ class DataNormalizationEngine:
             ]
             if "is_change" in out_norm.columns:
                 canonical_out_cols.append("is_change")
-            extra_out_cols = [c for c in out_norm.columns if c not in canonical_out_cols]
-            canonical["transaction_outputs"] = out_norm[canonical_out_cols + extra_out_cols]
+            canonical_out_cols_present = [c for c in canonical_out_cols if c in out_norm.columns]
+            extra_out_cols = [c for c in out_norm.columns if c not in canonical_out_cols_present]
+            canonical["transaction_outputs"] = out_norm[canonical_out_cols_present + extra_out_cols]
         else:
             canonical["transaction_outputs"] = pd.DataFrame()
 

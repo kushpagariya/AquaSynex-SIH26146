@@ -13,7 +13,7 @@ ml/feature_engineering/
 ├── __init__.py
 ├── transaction_features.py    # 15 transaction-level amounts, counts, and ratios
 ├── address_features.py        # 8 historical address behavior features (strict t < T_tx)
-├── temporal_features.py       # 7 rolling temporal activity and cadence features (6 canonical + 1 experimental)
+├── temporal_features.py       # 7 rolling temporal activity and cadence features (7 canonical, plus experimental time_burst_indicator)
 ├── network_features.py        # 6 network transport, ASN, and IP diversity features (5 numeric + 1 categorical context)
 ├── feature_pipeline.py        # Master pipeline, quality auditing, and Parquet/DuckDB export
 └── README.md                  # Package documentation and usage guide

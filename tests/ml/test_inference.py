@@ -11,6 +11,7 @@ Verifies:
 """
 
 from pathlib import Path
+import json
 import joblib
 import numpy as np
 import pytest
@@ -64,13 +65,22 @@ def test_frozen_threshold_decisions(sample_transformed_features: tuple, models_d
     """Verify classification decisions at the three frozen thresholds: tau=0.50, 0.32, 0.67."""
     _, X_transformed, prep = sample_transformed_features
 
+    metadata_path = models_dir / "model_metadata.json"
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    op_points = metadata["operating_points"]
+    tau_default = float(op_points["default_tau_0_50"]["threshold"])
+    tau_f1 = float(op_points["f1_optimal_tau_0_32"]["threshold"])
+    tau_high_prec = float(op_points.get("high_precision_r95_tau_0_67", op_points.get("high_precision_tau_0_67", {})).get("threshold", 0.67))
+
+    assert tau_default == 0.50
+    assert tau_f1 == 0.32
+    assert tau_high_prec == 0.67
+
     booster = xgb.Booster()
     booster.load_model(str(models_dir / "aquasynex_xgb_binary_v1.json"))
     probs = booster.predict(xgb.DMatrix(X_transformed, feature_names=prep["all_feature_names"]))
-
-    tau_default = 0.50
-    tau_f1 = 0.32
-    tau_high_prec = 0.67
 
     decisions_default = (probs >= tau_default).astype(int)
     decisions_f1 = (probs >= tau_f1).astype(int)

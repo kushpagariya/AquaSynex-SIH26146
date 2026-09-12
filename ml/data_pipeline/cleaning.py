@@ -128,8 +128,9 @@ class DataCleaningEngine:
 
             # Default port imputation if null
             if df_net["dst_port"].isna().any():
+                null_count = int(df_net["dst_port"].isna().sum())
                 df_net["dst_port"] = df_net["dst_port"].fillna(8333).astype(int)
-                stats["null_imputations"]["dst_port"] = int(df_net["dst_port"].isna().sum())
+                stats["null_imputations"]["dst_port"] = null_count
 
             # Filter orphans
             if not cleaned["transactions"].empty:

@@ -40,6 +40,9 @@ tests/
 │   ├── test_error_handling.py               # Domain error codes, 404s, and validation envelopes
 │   ├── test_data_consistency.py             # Cross-layer ID and count consistency
 │   ├── test_no_mock_data.py                 # Automated scan verifying zero mock data in frontend/src
+│   ├── test_ml_backend_integration.py       # End-to-end ML adapter, model discovery, scoring, TreeSHAP
+│   ├── test_real_user_integration_regression.py # Real-user workflow regressions, routing, and polling
+│   ├── test_sih_sample_upload.py            # Official SIH 500-row sample CSV upload and ML analysis
 │   └── test_full_user_journey.py            # Complete 14-step investigator user workflow
 └── ml/                                      # Standalone ML, Feature Engineering & Graph Test Suite
     ├── test_data_pipeline.py                # Ingestion, metadata quarantine, cleaning, normalization
@@ -197,11 +200,11 @@ Current execution results across the entire repository:
 Test Suite Partition                   Passed   Skipped   Failed   Total Tests
 ================================================================================
 Backend Unit Tests (backend/tests/)       62         0        0            62
-API Integration Tests (tests/api/)        17         0        0            17
-Integration Journeys (tests/integration/) 19         1        0            20
+API Integration Tests (tests/api/)        22         0        0            22
+Integration Journeys (tests/integration/) 36         1        0            37
 ML Subsystem (tests/ml/)                  40        14        0            54
 --------------------------------------------------------------------------------
-Total Suite                              138        15        0           153
+Total Suite                              160        15        0           175
 ================================================================================
 ```
 

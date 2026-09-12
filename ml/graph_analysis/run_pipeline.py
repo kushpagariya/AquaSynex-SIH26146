@@ -26,7 +26,6 @@ from ml.graph_analysis.graph_metrics import MacroscopicGraphMetrics
 
 
 def run_graph_pipeline(
-    canonical_dir: str = "data/processed/canonical",
     db_path: str = "database/aquasynex.duckdb",
     output_dir: str = "data/processed/graph"
 ):
@@ -35,13 +34,12 @@ def run_graph_pipeline(
     print("AquaSynex — Phase 2.4 Graph Analysis & Link Analysis Pipeline")
     print("=" * 70)
 
-    norm_canonical_dir = os.path.abspath(canonical_dir).replace("\\", "/")
     norm_output_dir = os.path.abspath(output_dir).replace("\\", "/")
     norm_db_path = os.path.abspath(db_path).replace("\\", "/")
     os.makedirs(norm_output_dir, exist_ok=True)
 
     # 1. Load canonical data
-    print(f"[*] Loading canonical dataset from: {norm_canonical_dir}...")
+    print(f"[*] Loading canonical dataset from DuckDB: {norm_db_path}...")
     con = duckdb.connect(norm_db_path)
     
     # Load canonical tables directly
@@ -119,13 +117,11 @@ def run_graph_pipeline(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AquaSynex Phase 2.4 Graph Analysis Pipeline")
-    parser.add_argument("--canonical-dir", default="data/processed/canonical", help="Path to canonical Parquet directory")
     parser.add_argument("--db-path", default="database/aquasynex.duckdb", help="Path to DuckDB database")
     parser.add_argument("--output-dir", default="data/processed/graph", help="Output directory for graph artifacts")
     args = parser.parse_args()
 
     run_graph_pipeline(
-        canonical_dir=args.canonical_dir,
         db_path=args.db_path,
         output_dir=args.output_dir
     )

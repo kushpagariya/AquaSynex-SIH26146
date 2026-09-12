@@ -415,13 +415,13 @@ class DatasetService:
             """
             self.conn.execute(insert_in_sql)
 
-        if src_ip_col or dst_port_col or country_col or asn_col:
-            src_ip_expr = f'CAST({escape_sql_identifier(src_ip_col)} AS VARCHAR)' if src_ip_col else "'127.0.0.1'"
-            src_port_expr = f'TRY_CAST({escape_sql_identifier(src_port_col)} AS INTEGER)' if src_port_col else "0"
-            dst_ip_expr = f'CAST({escape_sql_identifier(dst_ip_col)} AS VARCHAR)' if dst_ip_col else "'127.0.0.1'"
-            dst_port_expr = f'TRY_CAST({escape_sql_identifier(dst_port_col)} AS INTEGER)' if dst_port_col else "8333"
-            country_expr = f'UPPER(TRIM(CAST({escape_sql_identifier(country_col)} AS VARCHAR)))' if country_col else "'US'"
-            asn_expr = f'TRY_CAST({escape_sql_identifier(asn_col)} AS BIGINT)' if asn_col else "0"
+        if src_ip_col or dst_ip_col or src_port_col or dst_port_col or country_col or asn_col:
+            src_ip_expr = f'CAST({escape_sql_identifier(src_ip_col)} AS VARCHAR)' if src_ip_col else "NULL"
+            src_port_expr = f'TRY_CAST({escape_sql_identifier(src_port_col)} AS INTEGER)' if src_port_col else "NULL"
+            dst_ip_expr = f'CAST({escape_sql_identifier(dst_ip_col)} AS VARCHAR)' if dst_ip_col else "NULL"
+            dst_port_expr = f'TRY_CAST({escape_sql_identifier(dst_port_col)} AS INTEGER)' if dst_port_col else "NULL"
+            country_expr = f'UPPER(TRIM(CAST({escape_sql_identifier(country_col)} AS VARCHAR)))' if country_col else "NULL"
+            asn_expr = f'TRY_CAST({escape_sql_identifier(asn_col)} AS BIGINT)' if asn_col else "NULL"
 
             insert_net_sql = f"""
             INSERT OR REPLACE INTO network_events (
@@ -429,17 +429,17 @@ class DatasetService:
                 timestamp_epoch_sec, src_ip, src_port, dst_ip, dst_port, country, asn
             )
             SELECT 
-                'EVT_' || '{dataset_id}' || '_' || {tx_col_expr} AS event_id,
+                'EVT_' || '{dataset_id}' || '_' || {tx_col_expr} || '_' || ROW_NUMBER() OVER () AS event_id,
                 {tx_col_expr} AS transaction_id,
                 '{dataset_id}' AS dataset_id,
                 {timestamp_expr} AS timestamp,
                 CASE WHEN {timestamp_expr} IS NOT NULL THEN epoch({timestamp_expr}) ELSE 0 END AS timestamp_epoch_sec,
                 {src_ip_expr} AS src_ip,
-                COALESCE({src_port_expr}, 0) AS src_port,
+                {src_port_expr} AS src_port,
                 {dst_ip_expr} AS dst_ip,
-                COALESCE({dst_port_expr}, 8333) AS dst_port,
-                COALESCE({country_expr}, 'US') AS country,
-                COALESCE({asn_expr}, 0) AS asn
+                {dst_port_expr} AS dst_port,
+                {country_expr} AS country,
+                {asn_expr} AS asn
             FROM {temp_view}
             WHERE {tx_col_expr} IS NOT NULL
             """
@@ -491,7 +491,7 @@ class DatasetService:
             "analysisCapability": {
                 "graphAnalysis": bool(out_addr_col or in_addr_col or nested_out_addr_col or nested_in_addr_col),
                 "temporalAnalysis": bool(time_col),
-                "networkAnalysis": bool(src_ip_col or dst_port_col or country_col or asn_col),
+                "networkAnalysis": bool(src_ip_col or dst_ip_col or src_port_col or dst_port_col or country_col or asn_col),
             },
         }
 

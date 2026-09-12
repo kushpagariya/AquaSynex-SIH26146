@@ -105,10 +105,22 @@ class DatasetValidator:
         orphan_net = set(df_net["txid"]) - txid_set
         if orphan_net:
             self.log_error(f"{len(orphan_net)} orphaned network events reference non-existent TXIDs")
+        missing_net = txid_set - set(df_net["txid"])
+        if missing_net:
+            self.log_error(f"{len(missing_net)} transactions missing corresponding network events")
+        dup_net = df_net["txid"].duplicated().sum()
+        if dup_net > 0:
+            self.log_error(f"{dup_net} duplicate network events detected per txid")
             
         orphan_lbl = set(df_lbl["txid"]) - txid_set
         if orphan_lbl:
             self.log_error(f"{len(orphan_lbl)} orphaned labels reference non-existent TXIDs")
+        missing_lbl = txid_set - set(df_lbl["txid"])
+        if missing_lbl:
+            self.log_error(f"{len(missing_lbl)} transactions missing corresponding labels")
+        dup_lbl = df_lbl["txid"].duplicated().sum()
+        if dup_lbl > 0:
+            self.log_error(f"{dup_lbl} duplicate labels detected per txid")
 
         # 3. Bitcoin UTXO Conservation Checks
         print("  [3/8] Verifying Bitcoin conservation rules (in = out + fee)...", flush=True)
@@ -146,11 +158,11 @@ class DatasetValidator:
         print("  [4/8] Verifying network layer metadata (IP, port, ASN, country)...", flush=True)
         for ip_col in ["src_ip", "dst_ip"]:
             invalid_ips = 0
-            for ip in df_net[ip_col].sample(min(1000, len(df_net))):
+            for ip in df_net[ip_col]:
                 if not IPV4_PATTERN.match(str(ip)):
                     invalid_ips += 1
             if invalid_ips > 0:
-                self.log_error(f"Invalid IPv4 addresses detected in {ip_col}")
+                self.log_error(f"{invalid_ips} invalid IPv4 addresses detected in {ip_col}")
 
         # Port ranges
         for port_col in ["src_port", "dst_port"]:

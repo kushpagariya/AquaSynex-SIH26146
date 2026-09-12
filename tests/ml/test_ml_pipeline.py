@@ -62,79 +62,20 @@ def test_end_to_end_ml_pipeline_execution(ml_sample_dir: Path, models_dir: Path)
     # 7. Merge Tabular + Graph Features
     merged = f_tab.merge(f_graph, on="transaction_id", how="left")
 
-    # 8. Preprocessing
-    prep = joblib.load(models_dir / "preprocessor_v1.joblib")
-    X_num = prep["scaler"].transform(merged[prep["numeric_cols"]])
-    X_cat = prep["ohe"].transform(merged[prep["categorical_cols"]])
-    X_transformed = np.hstack([X_num, X_cat])
+    # 8. Call Production Inference Adapter (model_inference.py)
+    from pipeline.ml.model_inference import run_analysis
 
-    # 9. Model Inferences
-    # Binary detector (XGBoost)
-    booster = xgb.Booster()
-    booster.load_model(str(models_dir / "aquasynex_xgb_binary_v1.json"))
-    dmat = xgb.DMatrix(X_transformed, feature_names=prep["all_feature_names"])
-    risk_probs = booster.predict(dmat)
+    ml_results = run_analysis(
+        dataset_id=ml_sample_dir.name,
+        model_id="aquasynex_xgb_binary_v1",
+        model_version="1.0.0",
+        config={"max_entities": 1000, "top_explanations": 3},
+        db_path="",
+        data_dir=str(ml_sample_dir.parent),
+        models_dir=str(models_dir),
+    )
 
-    # SHAP explanations
-    contribs = booster.predict(dmat, pred_contribs=True)
-    shaps = contribs[:, :-1]
-
-    # Multiclass typology attribution (CatBoost)
-    cat = CatBoostClassifier()
-    cat.load_model(str(models_dir / "aquasynex_catboost_multiclass_v1.cbm"))
-    multi_probs = cat.predict_proba(X_transformed)
-    multi_preds = np.argmax(multi_probs, axis=1)
-    classes = prep["target_classes_multiclass"]
-
-    # 10. Construct Backend MLResult payloads
-    now_iso = datetime.now(timezone.utc).isoformat()
-    ml_results = []
-
-    for i in range(len(merged)):
-        txid = merged["transaction_id"].iloc[i]
-        r_prob = float(risk_probs[i])
-
-        # Assign risk level based on frozen thresholds
-        if r_prob >= 0.67:
-            risk_level = "critical"
-        elif r_prob >= 0.50:
-            risk_level = "high"
-        elif r_prob >= 0.32:
-            risk_level = "medium"
-        else:
-            risk_level = "low"
-
-        pred_label = classes[multi_preds[i]]
-        confidence = float(multi_probs[i, multi_preds[i]])
-
-        # Top 3 feature explanations
-        row_shap = shaps[i]
-        top_indices = np.argsort(np.abs(row_shap))[::-1][:3]
-        explanations = [
-            {
-                "feature": prep["all_feature_names"][idx],
-                "attribution": float(row_shap[idx]),
-                "value": float(X_transformed[i, idx]),
-            }
-            for idx in top_indices
-        ]
-
-        result_payload = {
-            "entity_id": txid,
-            "entity_type": "transaction",
-            "anomaly_score": r_prob,
-            "risk_score": r_prob,
-            "risk_level": risk_level,
-            "confidence": confidence,
-            "prediction_label": pred_label,
-            "explanations": explanations,
-            "features": [{"name": k, "value": float(v) if isinstance(v, (int, float, np.number)) else str(v)} for k, v in merged.iloc[i].to_dict().items()],
-            "graph_evidence": [{"cluster_size": int(merged["hist_cluster_size"].iloc[i])}],
-            "predicted_at": now_iso,
-        }
-        ml_results.append(result_payload)
-
-    # 11. Validate all payloads against backend PipelineService invariants
+    # 9. Validate all payloads against backend PipelineService invariants
     pipeline_service = PipelineService(conn=None)  # conn not needed for validation
     for item in ml_results:
         pipeline_service._validate_ml_result(item)

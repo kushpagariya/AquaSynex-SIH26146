@@ -38,13 +38,13 @@ The model consumes **strictly the 46 canonical predictive features** defined in 
 
 ### 2.1 Feature Breakdown by Domain
 
-1. **Transaction-Level Tabular Features (13)**:
+1. **Transaction-Level Tabular Features (15)**:
    - `tx_input_count`, `tx_output_count`, `tx_input_output_ratio`, `tx_total_input_sats`, `tx_total_output_sats`, `tx_fee_sats`, `tx_size_bytes`, `tx_fee_rate_sat_per_byte`, `tx_value_balance_ratio`, `tx_avg_input_value_sats`, `tx_max_input_value_sats`, `tx_avg_output_value_sats`, `tx_max_output_value_sats`, `tx_log_total_value`, `tx_log_fee`.
-2. **Historical Address Behavioral Features (7)**:
+2. **Historical Address Behavioral Features (8)**:
    - `addr_hist_tx_count`, `addr_hist_total_sent_sats`, `addr_hist_total_received_sats`, `addr_hist_avg_tx_val_sats`, `addr_hist_unique_counterparties`, `addr_hist_active_days`, `addr_hist_tx_per_day`, `addr_reuse_count`.
-3. **Temporal Activity Features (8)**:
+3. **Temporal Activity Features (7)**:
    - `time_hour_of_day`, `time_day_of_week`, `time_since_prev_global_tx_sec`, `time_txs_last_1m`, `time_txs_last_5m`, `time_txs_last_1h`, `time_since_prev_addr_tx_sec`.
-4. **Network Telemetry Features (5)**:
+4. **Network Telemetry Features (6)**:
    - `net_src_port`, `net_dst_port`, `net_is_standard_bitcoin_port`, `net_hist_unique_ips_for_addr`, `net_country` (categorical), `net_asn` (categorical).
 5. **Relational Topological Features (4)**:
    - `rel_fan_in`, `rel_fan_out`, `rel_has_change_output`, `rel_change_value_ratio`.

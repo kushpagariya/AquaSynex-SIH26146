@@ -23,7 +23,7 @@
 
 ## 2. Production Artifacts & Cryptographic Integrity
 
-All production model files and preprocessing pipelines are stored in [`models/`](file:///c:/Users/Office%20Pc/Downloads/SIH26146/AquaSynex-SIH26146/models) with immutable SHA256 checksums:
+All production model files and preprocessing pipelines are stored in [`models/`](models/) with immutable SHA256 checksums:
 
 | Artifact Name | Path | Format | SHA256 Checksum |
 |---|---|---|---|
@@ -64,9 +64,10 @@ The primary binary detector outputs a continuous anomaly probability $P(\text{su
 | **High-Precision $R_{95}$** | `0.67` | 0.9543 | 0.9499 | **0.9821** | **0.9833** | 0.9680 | 0.9663 | **871** / **10** / 31 / 588 | **Low False-Alarm Escalation Queue** |
 
 ### Operational Deployment Guidance:
-1. **Automated Blocking / Critical Alerts ($\tau \ge 0.67$)**: Only 10 false alarms across 881 benign test transactions ($1.14\%$ FPR) with $98.33\%$ precision. High confidence for direct escalation.
-2. **Standard Review ($\tau \in [0.32, 0.67)$)**: Captures $98.71\%$ of all anomalies (missing only 8 out of 619 suspicious transactions on the test set). Ideal for analyst triage pools.
-3. **Routine Settlement ($\tau < 0.32$)**: Clean benign traffic passed through without operational friction.
+All threshold recommendations are limited strictly to prototype analyst review and triage assistance. No automated blocking, direct escalation, or automated settlement decisions should be executed based solely on model outputs. Production operational deployment requires validation on representative real-world transaction traffic and formal approval of an operational policy before any automated decisioning:
+1. **High-Priority Review Queue ($\tau \ge 0.67$)**: Recommended for prioritized human analyst triage due to high precision ($98.33\%$) in prototype testing.
+2. **Standard Review Queue ($\tau \in [0.32, 0.67)$)**: Captures $98.71\%$ of benchmark anomalies for secondary analyst review.
+3. **Low-Priority Queue ($\tau < 0.32$)**: Low operational priority for baseline analyst triage.
 
 ---
 

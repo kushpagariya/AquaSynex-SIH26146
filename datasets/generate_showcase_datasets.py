@@ -19,7 +19,7 @@ import pandas as pd
 REQUIRED = [
     "timestamp", "src_ip", "dst_ip", "src_port", "dst_port", "txid",
     "input_addresses", "output_addresses", "input_amounts", "output_amounts",
-    "fee", "script_type", "country", "asn",
+    "fee", "script_type", "country", "asn", "scenario_id",
 ]
 
 def main():

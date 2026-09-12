@@ -73,9 +73,9 @@ Graph analysis tools infer cluster co-control through structural graph heuristic
 
 Run the end-to-end graph pipeline via CLI:
 ```bash
-python -m ml.graph_analysis.graph_builder
+python -m ml.graph_analysis.run_pipeline
 ```
 Or execute through unit tests:
 ```bash
-python -m unittest tests.test_graph_analysis
+pytest tests/ml/test_graph_analysis.py
 ```

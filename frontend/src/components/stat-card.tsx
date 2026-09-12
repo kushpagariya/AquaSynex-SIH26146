@@ -32,6 +32,20 @@ export function StatCard({
   return (
     <div
       onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                if (e.key === " ") {
+                  e.preventDefault()
+                }
+                onClick()
+              }
+            }
+          : undefined
+      }
       className={cn(
         "rounded-[var(--radius-panel)] border border-line bg-panel p-4 transition-colors",
         onClick && "cursor-pointer hover:bg-panel-2 hover:border-line-soft",

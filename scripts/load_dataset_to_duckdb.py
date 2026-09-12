@@ -28,20 +28,27 @@ def load_dataset(data_dir: str, db_path: str):
         ("sih_transactions", "sih_transactions.parquet")
     ]
     
+    # Preflight check: all required files must be present
+    missing_files = [f for _, f in tables_to_load if not os.path.exists(os.path.join(data_dir, f))]
+    if missing_files:
+        con.close()
+        raise FileNotFoundError(f"Preflight check failed: missing required dataset files in {data_dir}: {missing_files}. Aborting without changes.")
+
     print(f"[*] Ingesting Parquet datasets from {data_dir}...", flush=True)
     results = {}
-    for table_name, file_name in tables_to_load:
-        file_path = os.path.join(data_dir, file_name)
-        if not os.path.exists(file_path):
-            print(f"  [!] Warning: {file_name} not found in {data_dir}. Skipping {table_name}.", flush=True)
-            continue
-            
-        clean_path = file_path.replace("\\", "/")
-        # Analytical simple table creation from Parquet (DuckDB native zero-copy read)
-        con.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM '{clean_path}'")
-        count = con.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-        results[table_name] = count
-        print(f"  [+] Loaded table '{table_name}': {count:,} rows", flush=True)
+    try:
+        con.execute("BEGIN TRANSACTION")
+        for table_name, file_name in tables_to_load:
+            clean_path = os.path.join(data_dir, file_name).replace("\\", "/")
+            con.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM '{clean_path}'")
+            count = con.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            results[table_name] = count
+            print(f"  [+] Loaded table '{table_name}': {count:,} rows", flush=True)
+        con.execute("COMMIT")
+    except Exception as e:
+        con.execute("ROLLBACK")
+        con.close()
+        raise RuntimeError(f"Atomic loading failed, rolled back changes: {e}") from e
 
     # Verification query: count benign vs suspicious
     if "labels" in results:

@@ -25,23 +25,35 @@ def test_environment():
         settings.MODELS_DIR = str(temp_path / "models")
         settings.DB_PATH = str(temp_path / "test_aquasynex.db")
         settings.ensure_directories()
+        init_db(settings.DB_PATH)
         yield
+        close_db()
 
 
 @pytest.fixture
 def db() -> Generator[duckdb.DuckDBPyConnection, None, None]:
-    """Provide a fresh in-memory DuckDB connection for each test with migrations applied."""
-    conn = duckdb.connect(database=":memory:")
+    """Provide a direct connection to the test DuckDB database with clean tables."""
+    conn = duckdb.connect(database=settings.DB_PATH)
     run_migrations(conn)
+    # Clean tables between tests
+    for tbl in ["ml_results", "analysis_runs", "addresses", "transaction_outputs", "transaction_inputs", "transactions", "datasets"]:
+        try:
+            conn.execute(f"DELETE FROM {tbl}")
+        except Exception:
+            pass
     yield conn
     conn.close()
 
 
 @pytest.fixture
 def client(db: duckdb.DuckDBPyConnection) -> Generator[TestClient, None, None]:
-    """Provide a FastAPI TestClient with the in-memory db dependency overridden."""
+    """Provide a FastAPI TestClient with the db dependency overridden."""
     def override_get_db():
-        yield db
+        conn = duckdb.connect(database=settings.DB_PATH)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:

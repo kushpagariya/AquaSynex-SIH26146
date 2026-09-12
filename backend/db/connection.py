@@ -15,13 +15,14 @@ from backend.utils.logging import logger
 
 
 _connection: Optional[duckdb.DuckDBPyConnection] = None
+_connection_generation: int = 0
 _lock = threading.RLock()
 _local = threading.local()
 
 
 def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
     """Initialize DuckDB connection, run migrations, and store global reference."""
-    global _connection
+    global _connection, _connection_generation
     with _lock:
         target_path = database_path or settings.DB_PATH
         settings.ensure_directories()
@@ -30,6 +31,7 @@ def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
             conn = duckdb.connect(database=target_path)
             run_migrations(conn)
             _connection = conn
+            _connection_generation += 1
             if hasattr(_local, "cursor"):
                 _local.cursor = None
             logger.info(f"Connected to DuckDB database at: {target_path}")
@@ -90,9 +92,10 @@ class ThreadSafeRelation:
 class ThreadSafeConnection:
     """Thread-safe proxy wrapping DuckDB connection and cursor execution with RLock."""
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection, lock: threading.RLock):
+    def __init__(self, conn: duckdb.DuckDBPyConnection, lock: threading.RLock, generation: int = 0):
         self._conn = conn
         self._lock = lock
+        self.generation = generation
 
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         with self._lock:
@@ -103,7 +106,7 @@ class ThreadSafeConnection:
 
     def cursor(self) -> "ThreadSafeConnection":
         with self._lock:
-            return ThreadSafeConnection(self._conn.cursor(), self._lock)
+            return ThreadSafeConnection(self._conn.cursor(), self._lock, self.generation)
 
     def begin(self) -> Any:
         with self._lock:
@@ -136,20 +139,28 @@ class ThreadSafeConnection:
 
 def get_db_connection() -> duckdb.DuckDBPyConnection:
     """Get a thread-safe DuckDB cursor for the current thread."""
-    global _connection
+    global _connection, _connection_generation
     with _lock:
         if _connection is None:
             init_db()
-    if not hasattr(_local, "cursor") or _local.cursor is None:
-        with _lock:
+        current_cursor = getattr(_local, "cursor", None)
+        if (
+            current_cursor is None
+            or getattr(current_cursor, "generation", -1) != _connection_generation
+        ):
+            if current_cursor is not None:
+                try:
+                    current_cursor.close()
+                except Exception:
+                    pass
             raw_cursor = _connection.cursor()
-            _local.cursor = ThreadSafeConnection(raw_cursor, _lock)
-    return _local.cursor
+            _local.cursor = ThreadSafeConnection(raw_cursor, _lock, generation=_connection_generation)
+        return _local.cursor
 
 
 def close_db() -> None:
     """Close active DuckDB connection and thread cursor."""
-    global _connection
+    global _connection, _connection_generation
     with _lock:
         if hasattr(_local, "cursor") and _local.cursor is not None:
             try:
@@ -165,6 +176,7 @@ def close_db() -> None:
                 logger.warning(f"Error while closing DuckDB: {e}")
             finally:
                 _connection = None
+                _connection_generation += 1
 
 
 def get_db_lock() -> threading.RLock:

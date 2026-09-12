@@ -152,7 +152,7 @@ The generator implements controlled behavioral patterns with realistic synthetic
 
 | Scenario Name | Target Share | Ground Truth | Graph & Behavioral Pattern | Temporal & Network Characteristics |
 |---|---|---|---|---|
-| `normal` | 70% | `0` (Benign) | 1-to-2 or 2-to-2 wallet transfers; standard payment + change output | Diurnal inter-arrival timing (5–90s); stable residential or cloud ASNs |
+| `normal` | 71% | `0` (Benign) | 1-to-2 or 2-to-2 wallet transfers; standard payment + change output | Diurnal inter-arrival timing (5–90s); stable residential or cloud ASNs |
 | `benign_high_volume` | 8% | `0` (Benign) | High-throughput exchange deposit/withdrawal sweeps (5–15 outputs) | Rapid steady volume; legitimate hosting ASNs (Google, AWS); **not** flagged as suspicious |
 | `transaction_burst` | 4% | `1` (Suspicious) | Rapid surge of 3–5 transactions from a single entity within seconds | 1–10s burst window; 50% overlay with rapid IP hopping |
 | `high_fan_in` | 3% | `1` (Suspicious) | Consolidation of 8–16 distinct UTXOs into a single destination address | Aggregation pattern commonly preceding cash-outs |
@@ -163,6 +163,8 @@ The generator implements controlled behavioral patterns with realistic synthetic
 | `coordinated_activity` | 2% | `1` (Suspicious) | Multiple distinct entities concurrently funding a single destination sink | 30–120s synchronized activity window |
 | `amount_anomaly` | 1% | `1` (Suspicious) | Whale movement ($>200 \text{ BTC}$) or micro-dust fan-out ($546 \text{ sat}$) | Extreme statistical outliers in value distribution |
 | `temporal_anomaly` | 1% | `1` (Suspicious) | Off-hours activity (02:00–04:00 UTC) with robotic 60s periodicity | Unnatural machine timing; overlay with foreign network hops |
+
+*Note: Target shares sum to 100%; `SyntheticDatasetGenerator` also normalizes scenario weights dynamically during sampling.*
 
 ---
 

@@ -291,7 +291,8 @@ class Phase26ModelingExperiment:
         # 8. SHAP Analysis (Strictly on Selected Binary Model Only)
         if HAS_SHAP:
             print(f"\n[*] Computing SHAP Explainability strictly for selected model ({selected_model_name})...")
-            sample_idx = np.random.default_rng(self.random_seed).choice(len(X_val), size=300, replace=False)
+            shap_sample_size = min(300, len(X_val))
+            sample_idx = np.random.default_rng(self.random_seed).choice(len(X_val), size=shap_sample_size, replace=False)
             X_val_sample = X_val[sample_idx]
 
             explainer = shap.TreeExplainer(selected_model)
@@ -310,7 +311,7 @@ class Phase26ModelingExperiment:
 
             self.results["shap_analysis"] = {
                 "selected_model": selected_model_name,
-                "sample_size": 300,
+                "sample_size": shap_sample_size,
                 "top_20_features": shap_feature_importance
             }
             print(f"[+] SHAP analysis complete for {selected_model_name}:")

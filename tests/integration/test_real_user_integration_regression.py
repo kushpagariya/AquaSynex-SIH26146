@@ -6,9 +6,7 @@ B. Real executable model ID (aquasynex_xgb_binary_v1) is passed from frontend/ba
 C. Investigation navigation uses a real entity_id from analysis results.
 D. Fake IDs such as 'e-001' and keystroke fragments are rejected by entity APIs.
 E. Analysis polling stops immediately after COMPLETED.
-F. Analysis polling stops immediately after FAILED.
-G. Polling cleanup occurs on abort/unmount.
-H. Multiple effects/components do not create uncontrolled duplicate polling.
+F. Analysis polling stops immediately after FAILED and propagates error.
 I. Existing backend real-address endpoints continue to return 200 for valid dataset addresses.
 """
 
@@ -127,23 +125,38 @@ def test_regression_D_fake_ids_return_404(client: TestClient):
         assert tx_resp.json()["error"]["code"] == "TRANSACTION_NOT_FOUND"
 
 
-def test_regression_E_F_polling_termination_logic():
-    """Test E, F, G: Validate polling state transitions.
+def test_regression_E_F_polling_termination_logic(client: TestClient, uploaded_dataset: dict):
+    """Test E, F: Validate polling state transitions and termination via client.
 
-    - 'completed' is terminal: polling must stop.
-    - 'failed' is terminal: polling must stop and propagate error.
-    - 'pending' / 'running' are non-terminal: polling may continue.
+    - 'completed' is terminal: polling terminates successfully.
+    - 'failed' is terminal: polling terminates and propagates error message.
+    - Non-terminal states ('pending', 'running') allow polling continuation.
     """
+    dataset_id = uploaded_dataset["datasetId"]
+
+    # 1. Trigger an analysis with an unsupported/placeholder model to verify 'failed' terminal state
+    resp = client.post(
+        f"/api/datasets/{dataset_id}/analyses",
+        json={"modelId": "isolation_forest_v1", "modelVersion": "1.0.0"},
+    )
+    assert resp.status_code == 202
+    analysis_id = resp.json()["data"]["analysisId"]
+
+    # 2. Poll the analysis status endpoint
     terminal_statuses = {"completed", "failed"}
-    non_terminal_statuses = {"pending", "running"}
+    poll_resp = client.get(f"/api/analyses/{analysis_id}")
+    assert poll_resp.status_code == 200
+    data = poll_resp.json()["data"]
 
-    for s in ["completed", "failed"]:
-        assert s in terminal_statuses
-        assert s not in non_terminal_statuses
+    assert data["status"] in terminal_statuses, f"Expected terminal status, got {data['status']}"
+    if data["status"] == "failed":
+        # Verify failed-state error propagation
+        assert data.get("errorMessage") is not None
+        assert len(data["errorMessage"]) > 0
 
-    for s in ["pending", "running"]:
-        assert s in non_terminal_statuses
-        assert s not in terminal_statuses
+    # 3. Assert invariants against terminal state constants
+    assert "completed" in terminal_statuses and "completed" not in {"pending", "running"}
+    assert "failed" in terminal_statuses and "failed" not in {"pending", "running"}
 
 
 def test_regression_transaction_vs_address_entity_routing(client: TestClient):

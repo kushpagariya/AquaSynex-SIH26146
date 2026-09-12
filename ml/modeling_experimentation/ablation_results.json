@@ -1,4 +1,4 @@
-{
+﻿{
   "phase": "2.5C",
   "timestamp": "2026-09-12T03:00:00Z",
   "ablation_experiments": {
@@ -1227,7 +1227,7 @@
     },
     "graph_historical_features (neighbor degrees, reuse, cluster sizes)": {
       "classification": "SAFE / CAUSALLY SOUND",
-      "finding": "Ablation G (graph-only) achieves 0.9424 ROC-AUC on its own! When removed (Ablation E), tabular features still achieve 1.0000. Proves graph link analysis provides an independent, causally verified signal.",
+      "finding": "Ablation G (graph-only) achieves 0.9156 ROC-AUC on its own! When removed (Ablation E), tabular features still achieve 1.0000. Proves graph link analysis provides an independent, causally verified signal.",
       "recommendation": "SAFE to retain."
     },
     "transaction_structural_features (input/output counts, fees, amounts)": {

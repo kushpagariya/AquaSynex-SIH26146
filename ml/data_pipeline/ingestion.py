@@ -116,7 +116,9 @@ class DataIngestionEngine:
                 cols_to_drop = [c for c in df.columns if c in GENERATOR_METADATA_COLUMNS]
                 if cols_to_drop:
                     # Save quarantined columns before removing
-                    quarantined[f"{table_name}_generator_meta"] = df[["txid" if "txid" in df.columns else df.columns[0]] + cols_to_drop].copy()
+                    id_col = "txid" if "txid" in df.columns else df.columns[0]
+                    save_cols = [id_col] + [c for c in cols_to_drop if c != id_col]
+                    quarantined[f"{table_name}_generator_meta"] = df[save_cols].copy()
                     df = df.drop(columns=cols_to_drop)
                 observational[table_name] = df
             else:
@@ -127,7 +129,9 @@ class DataIngestionEngine:
             sih_df = raw_dfs["sih_transactions"].copy()
             cols_to_drop = [c for c in sih_df.columns if c in GENERATOR_METADATA_COLUMNS]
             if cols_to_drop:
-                quarantined["sih_generator_meta"] = sih_df[["txid"] + cols_to_drop].copy()
+                id_col = "txid" if "txid" in sih_df.columns else sih_df.columns[0]
+                save_cols = [id_col] + [c for c in cols_to_drop if c != id_col]
+                quarantined["sih_generator_meta"] = sih_df[save_cols].copy()
                 sih_df = sih_df.drop(columns=cols_to_drop)
             observational["sih_transactions"] = sih_df
 

@@ -385,10 +385,10 @@ The **frontend** is responsible for converting UTC datetimes to the investigator
 
 | Value | Risk Score Range | Meaning |
 |---|---|---|
-| `low` | 0.0 – 0.39 | Low analytical priority |
-| `medium` | 0.40 – 0.69 | Warrants attention |
-| `high` | 0.70 – 0.89 | Significant risk indicators |
-| `critical` | 0.90 – 1.00 | Highest priority for investigation |
+| `low` | 0.0 – 0.319 | Low analytical priority |
+| `medium` | 0.32 – 0.499 | Warrants attention |
+| `high` | 0.50 – 0.669 | Significant risk indicators |
+| `critical` | 0.67 – 1.00 | Highest priority for investigation |
 
 > **Note**: Risk score thresholds are `DECISION REQUIRED` — the above values are proposed defaults. See [risk-scoring.md](../ml/risk-scoring.md).
 

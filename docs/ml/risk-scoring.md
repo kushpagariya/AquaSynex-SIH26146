@@ -29,10 +29,10 @@ It represents the system's assessment of how suspicious an entity's behavioral p
 
 | Risk Level | Score Range | Investigative Guidance |
 |---|---|---|
-| `low` | [0.0, 0.39] | Normal behavior; low priority for investigation |
-| `medium` | [0.40, 0.69] | Some unusual signals; warrants attention |
-| `high` | [0.70, 0.89] | Multiple significant risk indicators; investigate further |
-| `critical` | [0.90, 1.00] | Highly anomalous behavior; highest investigation priority |
+| `low` | [0.0, 0.32) | Normal behavior; low priority for investigation |
+| `medium` | [0.32, 0.50) | Some unusual signals; warrants attention |
+| `high` | [0.50, 0.67) | Multiple significant risk indicators; investigate further |
+| `critical` | [0.67, 1.00] | Highly anomalous behavior; highest investigation priority |
 
 > **`DECISION REQUIRED`**: These threshold values are proposed defaults. They should be validated against a labeled dataset and adjusted based on precision/recall tradeoffs appropriate for the investigation context.
 

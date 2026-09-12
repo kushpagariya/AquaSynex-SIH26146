@@ -221,10 +221,10 @@ This decouple the backend core from ML frameworks at import time while enforcing
 ### 5.2 Risk Level Mapping Semantics
 
 Risk levels are derived from the XGBoost risk probability $s$:
-- $s \ge 0.90 \implies \mathbf{critical}$
-- $s \ge 0.70 \implies \mathbf{high}$
-- $s \ge 0.40 \implies \mathbf{medium}$
-- $s < 0.40 \implies \mathbf{low}$
+- $s \ge 0.67 \implies \mathbf{critical}$ (High-Precision $R_{95}$ operating threshold)
+- $s \ge 0.50 \implies \mathbf{high}$ (Default baseline threshold)
+- $s \ge 0.32 \implies \mathbf{medium}$ ($F_1$-optimal anomaly capture threshold)
+- $s < 0.32 \implies \mathbf{low}$ (Routine settlement pass-through)
 
 ### 5.3 Explanation Structure
 

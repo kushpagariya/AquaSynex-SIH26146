@@ -360,7 +360,7 @@ export async function getDatasetInfo(datasetIdOverride?: string): Promise<Datase
       targetDatasetId = datasets[0].datasetId
     }
 
-    const [detail, addrListRes, analysesRes, txSampleRes] = await Promise.all([
+    const [detail, addrListRes, analysesRes, txSampleRes, txLatestRes] = await Promise.all([
       getDataset(targetDatasetId),
       listAddresses(targetDatasetId, { page: 1, pageSize: 1 }).catch(() => null),
       listAnalysesForDataset(targetDatasetId).catch(() => []),
@@ -369,6 +369,12 @@ export async function getDatasetInfo(datasetIdOverride?: string): Promise<Datase
         pageSize: 50,
         sortBy: "timestamp",
         sortDir: "asc",
+      }).catch(() => null),
+      listTransactions(targetDatasetId, {
+        page: 1,
+        pageSize: 1,
+        sortBy: "timestamp",
+        sortDir: "desc",
       }).catch(() => null),
     ])
 
@@ -390,11 +396,11 @@ export async function getDatasetInfo(datasetIdOverride?: string): Promise<Datase
 
     let dateSpan = "—"
     const txs = txSampleRes?.data || []
-    if (txs.length >= 2) {
-      const firstTs = txs[0]?.timestamp
-      const lastTs = txs[txs.length - 1]?.timestamp
-      const t1 = firstTs ? new Date(firstTs).getTime() : NaN
-      const t2 = lastTs ? new Date(lastTs).getTime() : NaN
+    const firstTs = txs[0]?.timestamp || ""
+    const lastTs = txLatestRes?.data?.[0]?.timestamp || (txs.length > 0 ? txs[txs.length - 1]?.timestamp || "" : "")
+    if (firstTs && lastTs) {
+      const t1 = new Date(firstTs).getTime()
+      const t2 = new Date(lastTs).getTime()
       if (!isNaN(t1) && !isNaN(t2)) {
         const diffHours = Math.round(Math.abs(t2 - t1) / 3600000)
         dateSpan = diffHours > 24 ? `${Math.round(diffHours / 24)}d` : `${Math.max(1, diffHours)}h`
@@ -419,7 +425,7 @@ export async function getDatasetInfo(datasetIdOverride?: string): Promise<Datase
         entities: totalAddresses,
         addresses: totalAddresses,
         blocks: (val.block_count as number) || (txs[0]?.blockHeight ? 1 : 0),
-        dateRange: { from: txs[0]?.timestamp || "", to: txs[txs.length - 1]?.timestamp || "" },
+        dateRange: { from: firstTs, to: lastTs },
         flagged,
         span: dateSpan,
       },
@@ -684,7 +690,7 @@ export async function getInvestigation(
           id: "ev-tx-params",
           category: "transaction" as const,
           title: "Transaction Attributes",
-          detail: `${tx.inputs.length} inputs, ${tx.outputs.length} outputs, ${txFee.toFixed(5)} BTC fee`,
+          detail: `${(tx.inputs || []).length} inputs, ${(tx.outputs || []).length} outputs, ${txFee.toFixed(5)} BTC fee`,
           severity: "low" as const,
         },
       ]
@@ -1138,7 +1144,6 @@ export async function uploadAndAnalyzeDataset(
     )
   }
 
-  setActiveContext(datasetId, analysisId)
-  onProgress?.("completed", 100)
-  return { datasetId, analysisId }
+  onProgress?.("failed", 100)
+  throw new Error("Analysis polling timed out after 120 seconds without reaching a terminal status.")
 }

@@ -125,8 +125,7 @@ class AnalysisService:
         """Background worker executing ML analysis and calculating summary risk stats."""
         try:
             logger.info(f"Starting analysis run {analysis_id}...")
-            if self.conn is None:
-                self.conn = get_db_connection()
+            self.conn = get_db_connection()
             self.pipeline_service.conn = self.conn
             with get_db_lock():
                 analysis_queries.update_analysis_status(self.conn, analysis_id, status="running")
@@ -142,8 +141,16 @@ class AnalysisService:
 
             # Calculate entity counts and risk metrics
             entity_count = len(results)
-            high_risk_count = sum(1 for r in results if 0.70 <= float(r.get("risk_score", 0.0)) < 0.90)
-            critical_risk_count = sum(1 for r in results if float(r.get("risk_score", 0.0)) >= 0.90)
+            high_risk_count = sum(
+                1 for r in results
+                if r.get("risk_level") == "high"
+                or (r.get("risk_level") is None and 0.50 <= float(r.get("risk_score", 0.0)) < 0.67)
+            )
+            critical_risk_count = sum(
+                1 for r in results
+                if r.get("risk_level") == "critical"
+                or (r.get("risk_level") is None and float(r.get("risk_score", 0.0)) >= 0.67)
+            )
 
             # Update status to completed
             with get_db_lock():

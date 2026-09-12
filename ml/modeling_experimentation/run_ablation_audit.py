@@ -100,7 +100,14 @@ class LeakageRobustnessAuditor:
             "hist_component_size", "hist_address_reuse_ratio",
             "hist_cluster_size", "hist_cluster_tx_count"
         ]
-        tabular_features = [c for c in canonical_features if c not in graph_features]
+        core_tx_features = [
+            "tx_input_count", "tx_output_count", "tx_input_output_ratio",
+            "tx_total_input_sats", "tx_total_output_sats", "tx_fee_sats",
+            "tx_size_bytes", "tx_fee_rate_sat_per_byte", "tx_value_balance_ratio",
+            "tx_avg_input_value_sats", "tx_max_input_value_sats",
+            "tx_avg_output_value_sats", "tx_max_output_value_sats",
+            "tx_log_total_value", "tx_log_fee"
+        ]
 
         ablations = {
             "A. Full 46-Feature Baseline": {
@@ -123,9 +130,9 @@ class LeakageRobustnessAuditor:
                 "features": [c for c in canonical_features if c not in graph_features],
                 "description": "Excludes all 6 graph historical features."
             },
-            "F. Tabular-Only Feature Set": {
-                "features": tabular_features,
-                "description": "Only the 40 tabular features (transaction, address, temporal, network, relational)."
+            "F. Core Transaction-Only Feature Set": {
+                "features": [c for c in core_tx_features if c in canonical_features],
+                "description": "Only the 15 core transaction-level tabular features (excludes address, temporal, network, and graph)."
             },
             "G. Graph/Historical-Only Feature Set": {
                 "features": graph_features,
@@ -281,32 +288,45 @@ class LeakageRobustnessAuditor:
                 }
             scenario_distributions[feat] = dist_per_class
 
-        # 7. Classification of Feature Groups
+        # 7. Classification of Feature Groups derived dynamically from measured ablation_outputs
+        h_cb_roc = ablation_outputs.get("H. Single Feature (rel_change_value_ratio)", {}).get("results", {}).get("CatBoost", {}).get("roc_auc", 0.0)
+        h_cb_pr = ablation_outputs.get("H. Single Feature (rel_change_value_ratio)", {}).get("results", {}).get("CatBoost", {}).get("pr_auc", 0.0)
+        c_cb_drop = ablation_outputs.get("C. Remove Network-Port Features", {}).get("results", {}).get("CatBoost", {}).get("roc_auc_drop", 0.0)
+        d_cb_drop = ablation_outputs.get("D. Remove Temporal Features", {}).get("results", {}).get("CatBoost", {}).get("roc_auc_drop", 0.0)
+        g_cb_roc = ablation_outputs.get("G. Graph/Historical-Only Feature Set", {}).get("results", {}).get("CatBoost", {}).get("roc_auc", 0.0)
+        e_cb_drop = ablation_outputs.get("E. Remove Graph Historical Features", {}).get("results", {}).get("CatBoost", {}).get("roc_auc_drop", 0.0)
+        f_cb_roc = ablation_outputs.get("F. Core Transaction-Only Feature Set", {}).get("results", {}).get("CatBoost", {}).get("roc_auc", 0.0)
+
         feature_group_evaluations = {
             "rel_change_value_ratio": {
-                "classification": "GENERATOR-FINGERPRINT RISK",
-                "finding": "In synthetic generation, peeling chains, mixing, and multihop have extreme or near-deterministic change ratios (e.g. median 0.90-0.96 vs 0.50 in normal). When tested alone (Ablation H), CatBoost achieves 0.9648 ROC-AUC, proving it carries heavy scenario construction signal.",
-                "recommendation": "Retain in research benchmark, but flag as synthetic construction fingerprint."
+                "classification": "GENERATOR-FINGERPRINT RISK" if h_cb_roc >= 0.85 else "SAFE / STRUCTURALLY RELEVANT",
+                "finding": f"When tested alone (Ablation H), CatBoost achieves {h_cb_roc:.4f} ROC-AUC and {h_cb_pr:.4f} PR-AUC.",
+                "recommendation": "Retain in research benchmark, but flag as synthetic construction fingerprint." if h_cb_roc >= 0.85 else "SAFE to retain.",
+                "metrics": {"catboost_roc_auc": h_cb_roc, "catboost_pr_auc": h_cb_pr}
             },
             "network_ports (net_src_port, net_dst_port, net_is_standard_bitcoin_port)": {
-                "classification": "SUSPICIOUS / FINGERPRINT RISK",
-                "finding": "In normal transactions, net_is_standard_bitcoin_port is 1.0 (port 8333) for 100% of samples. In several anomaly scenarios, anomalous ports were injected deterministically. Ablation C shows that removing port features causes ZERO drop in ROC-AUC (1.0000 -> 1.0000), proving tree models have alternative topological paths.",
-                "recommendation": "Keep as observational context, but exclude from final primary score to prevent synthetic port leakage."
+                "classification": "SUSPICIOUS / FINGERPRINT RISK" if c_cb_drop <= 0.01 else "SAFE / PREDICTIVE",
+                "finding": f"Ablation C shows that removing port features causes a {c_cb_drop:.4f} drop in CatBoost ROC-AUC.",
+                "recommendation": "Keep as observational context, but evaluate potential synthetic port leakage." if c_cb_drop <= 0.01 else "SAFE to retain.",
+                "metrics": {"catboost_roc_auc_drop": c_cb_drop}
             },
             "temporal_features (inter-arrival, burst windows)": {
                 "classification": "SAFE / STRUCTURALLY RELEVANT",
-                "finding": "Ablation D (removing temporal features) shows ROC-AUC remains 1.0000. Temporal spacing reflects genuine burst dynamics (1-10s bursts) rather than deterministic leakage.",
-                "recommendation": "SAFE to retain."
+                "finding": f"Ablation D shows that removing temporal features results in a {d_cb_drop:.4f} drop in CatBoost ROC-AUC.",
+                "recommendation": "SAFE to retain.",
+                "metrics": {"catboost_roc_auc_drop": d_cb_drop}
             },
             "graph_historical_features (neighbor degrees, reuse, cluster sizes)": {
-                "classification": "SAFE / CAUSALLY SOUND",
-                "finding": "Ablation G (graph-only) achieves 0.9424 ROC-AUC on its own! When removed (Ablation E), tabular features still achieve 1.0000. Proves graph link analysis provides an independent, causally verified signal.",
-                "recommendation": "SAFE to retain."
+                "classification": "SAFE / CAUSALLY SOUND" if g_cb_roc >= 0.5 else "LOW SIGNAL",
+                "finding": f"Ablation G (graph-only) achieves {g_cb_roc:.4f} CatBoost ROC-AUC on its own, and removing graph features (Ablation E) causes a {e_cb_drop:.4f} CatBoost ROC-AUC drop.",
+                "recommendation": "SAFE to retain.",
+                "metrics": {"catboost_roc_auc": g_cb_roc, "catboost_roc_auc_drop": e_cb_drop}
             },
             "transaction_structural_features (input/output counts, fees, amounts)": {
                 "classification": "SAFE / CANONICAL",
-                "finding": "Fan-in and fan-out structures reflect genuine UTXO transaction patterns (high fan-in consolidation, high fan-out disbursement).",
-                "recommendation": "SAFE to retain."
+                "finding": f"Ablation F (core transaction-only) achieves {f_cb_roc:.4f} CatBoost ROC-AUC.",
+                "recommendation": "SAFE to retain.",
+                "metrics": {"catboost_roc_auc": f_cb_roc}
             }
         }
 

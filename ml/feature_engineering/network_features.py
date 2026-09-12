@@ -63,16 +63,33 @@ class NetworkFeatureExtractor:
 
         net_sorted["net_hist_unique_ips_for_addr"] = hist_ip_counts
 
+        # If transaction table is provided, retain last event before/at transaction timestamp
+        if not df_tx.empty and "timestamp_epoch_sec" in df_tx.columns:
+            tx_col = "transaction_id" if "transaction_id" in df_tx.columns else "txid"
+            tx_ts_map = df_tx.set_index(tx_col)["timestamp_epoch_sec"].to_dict()
+            tx_epochs = net_sorted["transaction_id"].map(tx_ts_map)
+            valid_mask = tx_epochs.isna() | (net_sorted["timestamp_epoch_sec"] <= tx_epochs)
+            if valid_mask.any():
+                net_sorted = net_sorted[valid_mask].copy()
+
+        # Reduce to exactly one row per transaction by retaining the last event
+        net_sorted = net_sorted.drop_duplicates(subset=["transaction_id"], keep="last").copy()
+
+        # Fill established defaults before integer casts
+        src_port_filled = net_sorted["src_port"].fillna(0).astype(int)
+        dst_port_filled = net_sorted["dst_port"].fillna(8333).astype(int)
+        asn_filled = net_sorted["asn"].fillna(0).astype("int64")
+
         features = pd.DataFrame()
         features["transaction_id"] = net_sorted["transaction_id"].values
-        features["net_src_port"] = net_sorted["src_port"].astype(int).values
-        features["net_dst_port"] = net_sorted["dst_port"].astype(int).values
-        features["net_is_standard_bitcoin_port"] = (net_sorted["dst_port"].values == 8333).astype(int)
-        features["net_asn"] = net_sorted["asn"].astype("int64").values
-        features["net_hist_unique_ips_for_addr"] = net_sorted["net_hist_unique_ips_for_addr"].astype(int).values
+        features["net_src_port"] = src_port_filled.values
+        features["net_dst_port"] = dst_port_filled.values
+        features["net_is_standard_bitcoin_port"] = (dst_port_filled.values == 8333).astype(int)
+        features["net_asn"] = asn_filled.values
+        features["net_hist_unique_ips_for_addr"] = net_sorted["net_hist_unique_ips_for_addr"].fillna(0).astype(int).values
 
         # Optional observational country string retained for context/analysis
         if "country" in net_sorted.columns:
-            features["net_country"] = net_sorted["country"].astype(str).values
+            features["net_country"] = net_sorted["country"].fillna("UNKNOWN").astype(str).values
 
         return features

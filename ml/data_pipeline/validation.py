@@ -89,7 +89,7 @@ class DataValidationEngine:
             result.add_error(f"Duplicate TXIDs found in transactions: {df_tx['txid'].duplicated().sum()} duplicates.")
 
         # 2. Hex format
-        invalid_hex = (~df_tx["txid"].str.match(HEX_64_PATTERN)).sum()
+        invalid_hex = (~df_tx["txid"].str.match(HEX_64_PATTERN, na=False)).sum()
         if invalid_hex > 0:
             result.add_error(f"{invalid_hex} transactions have invalid 64-char hex TXIDs.")
 
@@ -121,8 +121,9 @@ class DataValidationEngine:
             result.add_error(f"{len(orphaned)} inputs reference non-existent transaction IDs.")
 
         # Value constraints
-        if (df_in["amount_satoshi"] <= 0).any():
-            result.add_error(f"{(df_in['amount_satoshi'] <= 0).sum()} inputs have non-positive amount_satoshi.")
+        in_val_col = "input_value_satoshi" if "input_value_satoshi" in df_in.columns else ("amount_satoshi" if "amount_satoshi" in df_in.columns else None)
+        if in_val_col is not None and (df_in[in_val_col] <= 0).any():
+            result.add_error(f"{(df_in[in_val_col] <= 0).sum()} inputs have non-positive {in_val_col}.")
 
     def _validate_outputs(self, df_out: pd.DataFrame, df_tx: pd.DataFrame, result: ValidationResult):
         # Uniqueness
@@ -134,9 +135,13 @@ class DataValidationEngine:
         if orphaned:
             result.add_error(f"{len(orphaned)} outputs reference non-existent transaction IDs.")
 
+        out_val_col = "output_value_satoshi" if "output_value_satoshi" in df_out.columns else ("amount_satoshi" if "amount_satoshi" in df_out.columns else None)
+        if out_val_col is not None and (df_out[out_val_col] <= 0).any():
+            result.add_error(f"{(df_out[out_val_col] <= 0).sum()} outputs have non-positive {out_val_col}.")
+
         # Dust limits
-        if self.enforce_dust_limit:
-            dust_violations = (df_out["amount_satoshi"] < self.min_dust_sats).sum()
+        if self.enforce_dust_limit and out_val_col is not None:
+            dust_violations = (df_out[out_val_col] < self.min_dust_sats).sum()
             if dust_violations > 0:
                 result.add_error(f"{dust_violations} outputs violate Bitcoin dust threshold (< {self.min_dust_sats} satoshis).")
 

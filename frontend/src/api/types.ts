@@ -104,12 +104,12 @@ export interface TransactionOutputDetail {
 }
 
 export interface NetworkEventSchema {
-  srcIp?: string
-  srcPort?: number
-  dstIp?: string
-  dstPort?: number
-  country?: string
-  asn?: number
+  srcIp?: string | null
+  srcPort?: number | null
+  dstIp?: string | null
+  dstPort?: number | null
+  country?: string | null
+  asn?: number | null
 }
 
 export interface TransactionDetail extends TransactionSummary {

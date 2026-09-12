@@ -59,7 +59,7 @@ This report establishes the data quality and anti-leakage audit results for the 
 
 | Leakage Vector | Pre-Remediation Risk | Remediation Implemented | Post-Remediation Status |
 |---|---|---|---|
-| **Temporal Leakage** | All 177 `temporal_anomaly` transactions occurred at exact hour `03:15 UTC` (`distinct_hours = 1`). Models could memorize a single time point. | `generate_temporal_anomaly` was refactored to sample off-hours stochastically from `01:00–05:00 UTC` with dynamic minute/second offsets, randomized intervals ($30–150\text{s}$), and variable fees ($3,500–9,500\text{ sat}$). | **RESOLVED**: Transactions span hours 1, 2, 3, and 4 UTC (`hr_1: 65, hr_2: 32, hr_3: 45, hr_4: 67`). |
+| **Temporal Leakage** | All 209 `temporal_anomaly` transactions occurred at exact hour `03:15 UTC` (`distinct_hours = 1`). Models could memorize a single time point. | `generate_temporal_anomaly` was refactored to sample off-hours stochastically from `01:00–05:00 UTC` with dynamic minute/second offsets, randomized intervals ($30–150\text{s}$), and variable fees ($3,500–9,500\text{ sat}$). | **RESOLVED**: Transactions span hours 1, 2, 3, and 4 UTC (`hr_1: 65, hr_2: 32, hr_3: 45, hr_4: 67`). |
 | **Network Flag Leakage** | `has_network_anomaly` column was exposed directly in `network_events.parquet`. | Column was removed from `network_records` and moved exclusively into `labels.parquet`. | **RESOLVED & QUARANTINED**: Observational network events table has 0 generator tracking flags. |
 | **Country Distribution Leakage** | 5 offshore jurisdictions (`SC`, `BZ`, `PA`, `RU`, `IR`) only appeared in suspicious transactions, creating a 100% deterministic categorical signal. | Added baseline benign presence for `PA` (2.0%), `RU` (1.5%), `SC` (1.0%), `BZ` (1.0%), and `IR` (0.5%) in the global entity pool. Suspicious overlays also use standard jurisdictions (`US`, `DE`, `SG`, `GB`, `CH`). | **RESOLVED**: Normal transactions now originate across all jurisdictions (`PA`: 105, `RU`: 71, `BZ`: 41, `SC`: 36, `IR`: 30). |
 | **Exact Amount Leakage** | Audited for identical repeated amounts that could act as artificial constants. | Amounts are dynamically computed from entity UTXO balances and dynamic transaction parameters. | **VERIFIED**: Zero duplicate amount clusters found. |
@@ -88,8 +88,8 @@ Both regenerated datasets were audited across 8 automated validation stages:
 | Metric | Development Dataset (`data/sample/`) | Benchmark Dataset (`data/sample/benchmark/`) |
 |---|---|---|
 | **Total Transactions** | 10,000 | 10,000 |
-| **Benign Transactions** | 5,663 (**56.63%**) | 8,686 (**86.86%**) |
-| **Suspicious Transactions** | 4,337 (**43.37%**) | 1,314 (**13.14%**) |
+| **Benign Transactions** | 5,663 (**56.63%**) | 8,681 (**86.81%**) |
+| **Suspicious Transactions** | 4,337 (**43.37%**) | 1,319 (**13.19%**) |
 | **Total Transaction Inputs** | 13,995 | 11,160 |
 | **Total Transaction Outputs** | 28,853 | 22,775 |
 | **Total Network Events** | 10,000 | 10,000 |

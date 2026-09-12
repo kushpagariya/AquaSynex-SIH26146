@@ -27,7 +27,6 @@ most defensible demonstration.
 
 ## Source scenario counts
 
-0
 SCEN_NORMAL         254
 SCEN_BURST           64
 SCEN_MULTIHOP        51

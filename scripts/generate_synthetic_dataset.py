@@ -68,11 +68,11 @@ def generate_txid(rng: random.Random, salt: str) -> str:
     return hashlib.sha256(seed_str.encode("utf-8")).hexdigest()
 
 def generate_ip(rng: random.Random, subnet: Optional[str] = None) -> str:
-    """Generate a realistic synthetic IPv4 address."""
+    """Generate a realistic synthetic IPv4 address using RFC 5737 documentation subnets."""
     if subnet:
         return f"{subnet}.{rng.randint(2, 254)}"
-    first_octet = rng.choice([24, 31, 45, 51, 62, 78, 85, 93, 104, 142, 168, 178, 185, 198, 203])
-    return f"{first_octet}.{rng.randint(1, 254)}.{rng.randint(1, 254)}.{rng.randint(2, 254)}"
+    doc_prefix = rng.choice(["192.0.2", "198.51.100", "203.0.113"])
+    return f"{doc_prefix}.{rng.randint(2, 254)}"
 
 def choose_weighted(rng: random.Random, items_with_weights: List[Tuple[Any, float]]) -> Any:
     items, weights = zip(*items_with_weights)
@@ -397,7 +397,8 @@ class SyntheticDatasetGenerator:
             "dst_ip": dst_ip,
             "dst_port": dst_port,
             "country": country,
-            "asn": asn
+            "asn": asn,
+            "has_network_anomaly": bool(network_anomaly)
         })
 
         # 5. Label Record (stores ground truth & generator metadata)
@@ -925,7 +926,7 @@ class SyntheticDatasetGenerator:
         else:
             utxo = self._fund_entity_if_needed(entity, min_sats=20_000_000)
             fee = self.rng.randint(5_000, 15_000)
-            dust_amt = self.rng.choice([273, 546, 800, 1000])
+            dust_amt = self.rng.choice([546, 800, 1000])
             num_dust = self.rng.randint(12, 28)
             
             outputs = [(generate_address(self.rng, "P2PKH"), dust_amt, False) for _ in range(num_dust)]

@@ -414,24 +414,24 @@ def test_14_risk_level_mapping_boundaries():
     """Verify exact boundary behavior for risk level mapping function."""
     from pipeline.ml.model_inference import map_risk_level
 
-    # Test critical boundaries (>= 0.90)
+    # Test critical boundaries (>= 0.67)
     assert map_risk_level(1.00) == "critical"
     assert map_risk_level(0.95) == "critical"
-    assert map_risk_level(0.90) == "critical"
-    assert map_risk_level(0.899999) == "high"
+    assert map_risk_level(0.67) == "critical"
+    assert map_risk_level(0.669999) == "high"
 
-    # Test high boundaries (>= 0.70)
-    assert map_risk_level(0.89) == "high"
-    assert map_risk_level(0.70) == "high"
-    assert map_risk_level(0.699999) == "medium"
+    # Test high boundaries (>= 0.50)
+    assert map_risk_level(0.60) == "high"
+    assert map_risk_level(0.50) == "high"
+    assert map_risk_level(0.499999) == "medium"
 
-    # Test medium boundaries (>= 0.40)
-    assert map_risk_level(0.69) == "medium"
+    # Test medium boundaries (>= 0.32)
     assert map_risk_level(0.40) == "medium"
-    assert map_risk_level(0.399999) == "low"
+    assert map_risk_level(0.32) == "medium"
+    assert map_risk_level(0.319999) == "low"
 
-    # Test low boundaries (< 0.40)
-    assert map_risk_level(0.39) == "low"
+    # Test low boundaries (< 0.32)
+    assert map_risk_level(0.30) == "low"
     assert map_risk_level(0.00) == "low"
 
 

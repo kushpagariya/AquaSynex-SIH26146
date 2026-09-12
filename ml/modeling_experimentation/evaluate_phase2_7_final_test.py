@@ -17,6 +17,7 @@ import yaml
 import duckdb
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.preprocessing import RobustScaler, OneHotEncoder
 from sklearn.metrics import (
     roc_auc_score,
@@ -30,6 +31,7 @@ from sklearn.metrics import (
     classification_report
 )
 import xgboost as xgb
+import catboost
 from catboost import CatBoostClassifier
 
 def sha256_checksum(filepath: str) -> str:
@@ -325,13 +327,13 @@ def main():
                 "path": cat_model_path,
                 "sha256": checksum_cat,
                 "library": "catboost",
-                "version": "1.2.7"
+                "version": catboost.__version__
             },
             "preprocessor": {
                 "path": preprocessor_path,
                 "sha256": checksum_prep,
                 "library": "joblib / scikit-learn",
-                "version": "1.5.3"
+                "version": sklearn.__version__
             }
         },
         "features": {

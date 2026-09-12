@@ -289,10 +289,10 @@ def get_transaction_by_id(
     net_query = """
     SELECT src_ip, src_port, dst_ip, dst_port, country, asn
     FROM network_events
-    WHERE transaction_id = ?
+    WHERE transaction_id = ? AND dataset_id = ?
     LIMIT 10
     """
-    net_rel = conn.execute(net_query, [transaction_id])
+    net_rel = conn.execute(net_query, [transaction_id, tx_record["dataset_id"]])
     network_events = [
         {
             "src_ip": r[0],
