@@ -1,0 +1,186 @@
+# AquaSynex — Formally Frozen Model Specification
+# Phase 2.6 Freeze — Approved for Phase 2.7 Final Test Evaluation
+# Authoritative Version: 1.0.0
+# Frozen Date: 2026-09-12
+
+freeze_metadata:
+  phase: "2.6"
+  status: "FROZEN_FOR_TEST_EVALUATION"
+  seed: 42
+  dataset_version: "2.0.0"
+  dataset_source: "data/processed/modeling_v2/modeling_dataset.parquet"
+  feature_manifest: "data/processed/modeling_v2/feature_manifest.yaml"
+  authoritative_validation_notebook: "notebooks/08_official_colab_modeling.ipynb"
+  diagnostic_runner: "ml/modeling_experimentation/train_phase2_6.py"
+
+model_architecture:
+  name: "XGBoost Binary Classifier"
+  library: "xgboost"
+  class: "xgboost.XGBClassifier"
+  version_pinned: "2.1.4"
+  hyperparameters:
+    n_estimators: 300
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    scale_pos_weight: 1.3209549071618037 # (7000 - 3016) / 3016
+    eval_metric: "logloss"
+    random_state: 42
+    n_jobs: -1
+
+features:
+  manifest_version: "2.0"
+  canonical_feature_count: 46
+  numeric_features_count: 44
+  categorical_features_count: 2
+  numeric_features:
+    - tx_input_count
+    - tx_output_count
+    - tx_input_output_ratio
+    - tx_total_input_sats
+    - tx_total_output_sats
+    - tx_fee_sats
+    - tx_size_bytes
+    - tx_fee_rate_sat_per_byte
+    - tx_value_balance_ratio
+    - tx_avg_input_value_sats
+    - tx_max_input_value_sats
+    - tx_avg_output_value_sats
+    - tx_max_output_value_sats
+    - tx_log_total_value
+    - tx_log_fee
+    - addr_hist_tx_count
+    - addr_hist_total_sent_sats
+    - addr_hist_total_received_sats
+    - addr_hist_avg_tx_val_sats
+    - addr_hist_unique_counterparties
+    - addr_hist_active_days
+    - addr_hist_tx_per_day
+    - addr_reuse_count
+    - time_hour_of_day
+    - time_day_of_week
+    - time_since_prev_global_tx_sec
+    - time_txs_last_1m
+    - time_txs_last_5m
+    - time_txs_last_1h
+    - time_since_prev_addr_tx_sec
+    - net_src_port
+    - net_dst_port
+    - net_is_standard_bitcoin_port
+    - net_hist_unique_ips_for_addr
+    - rel_fan_in
+    - rel_fan_out
+    - rel_has_change_output
+    - rel_change_value_ratio
+    - hist_in_mean_neighbor_degree
+    - hist_out_mean_neighbor_degree
+    - hist_component_size
+    - hist_address_reuse_ratio
+    - hist_cluster_size
+    - hist_cluster_tx_count
+  categorical_features:
+    - net_country
+    - net_asn
+  strictly_excluded_columns:
+    - transaction_id
+    - timestamp_epoch_sec
+    - hist_cluster_id
+    - graph_fan_in
+    - graph_fan_out
+    - graph_unique_in_addrs
+    - graph_unique_out_addrs
+    - target_binary
+    - target_multiclass
+    - temporal_split
+
+preprocessing_pipeline:
+  training_partition_size: 7000
+  leakage_rule: "Fit strictly on train (temporal_split == 'train'); transform val and test partitions without refitting."
+  numeric_scaler:
+    class: "sklearn.preprocessing.RobustScaler"
+    with_centering: true
+    with_scaling: true
+    quantile_range: [25.0, 75.0]
+  categorical_encoder:
+    class: "sklearn.preprocessing.OneHotEncoder"
+    handle_unknown: "ignore"
+    sparse_output: false
+  post_transform_dimension: 71 # 44 numeric + 27 one-hot binary flags
+
+calibrated_operating_points:
+  default:
+    threshold: 0.50
+    validation_metrics:
+      precision: 0.9702
+      recall: 0.9763
+      f1_score: 0.9733
+      accuracy: 0.9773
+    operational_role: "Balanced baseline monitoring"
+  f1_optimal:
+    threshold: 0.32
+    validation_metrics:
+      precision: 0.9632
+      recall: 0.9921
+      f1_score: 0.9775
+      accuracy: 0.9807
+    operational_role: "Compliance audit / maximum anomaly capture (catches 99.21% anomalies with only 5 FN out of 634)"
+    selection_rule: "Argmax F1 score across thresholds in [0.01, 0.99] on validation partition"
+  high_recall_r95:
+    threshold: 0.67
+    validation_metrics:
+      precision: 0.9821
+      recall: 0.9543
+      f1_score: 0.9680
+      accuracy: 0.9733
+    operational_role: "High-precision analyst escalation queue (only 11 FP across 866 benign txs)"
+    selection_rule: "Among thresholds with validation Recall >= 0.95, select threshold with highest Precision; tie-break highest F1"
+
+multiclass_configuration:
+  target: "target_multiclass"
+  classes_count: 11
+  classes:
+    - amount_anomaly
+    - benign_high_volume
+    - coordinated_activity
+    - high_fan_in
+    - high_fan_out
+    - mixing_like
+    - normal
+    - peeling_chain
+    - rapid_multihop
+    - temporal_anomaly
+    - transaction_burst
+  model:
+    library: "catboost"
+    class: "catboost.CatBoostClassifier"
+    hyperparameters:
+      iterations: 350
+      depth: 6
+      learning_rate: 0.06
+      loss_function: "MultiClass"
+      eval_metric: "MultiClass"
+      random_seed: 42
+      verbose: 0
+  validation_performance:
+    top1_accuracy: 0.9660
+    macro_f1: 0.9566
+    weighted_f1: 0.9660
+    log_loss: 0.1002
+
+explainability_configuration:
+  method: "TreeSHAP"
+  target_model: "binary_xgboost"
+  implementation: "xgboost.predict(pred_contribs=True) with shap.TreeExplainer compatibility"
+  reference_baseline: "expected_margin_value"
+  top_attribution_drivers:
+    - hist_out_mean_neighbor_degree
+    - time_since_prev_global_tx_sec
+    - time_day_of_week
+    - time_txs_last_1m
+    - rel_change_value_ratio
+    - tx_input_count
+    - tx_fee_sats
+    - tx_size_bytes
+    - tx_fee_rate_sat_per_byte
+    - hist_component_size
