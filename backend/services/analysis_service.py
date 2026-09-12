@@ -1,4 +1,7 @@
-"""Analysis orchestration service managing asynchronous runs and summary counts."""
+"""Analysis orchestration service managing asynchronous runs and summary counts.
+
+Authoritative reference: docs/backend/backend-architecture.md
+"""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,7 +10,7 @@ import uuid
 from fastapi import BackgroundTasks
 import duckdb
 from backend.config import settings
-from backend.db.connection import get_db_lock
+from backend.db.connection import get_db_connection, get_db_lock
 from backend.db.queries import analyses as analysis_queries
 from backend.db.queries import datasets as dataset_queries
 from backend.schemas.analyses import AnalysisConfigSchema
@@ -118,6 +121,9 @@ class AnalysisService:
         """Background worker executing ML analysis and calculating summary risk stats."""
         try:
             logger.info(f"Starting analysis run {analysis_id}...")
+            conn = get_db_connection()
+            self.conn = conn
+            self.pipeline_service.conn = conn
             with get_db_lock():
                 analysis_queries.update_analysis_status(self.conn, analysis_id, status="running")
 

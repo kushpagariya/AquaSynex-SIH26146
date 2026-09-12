@@ -14,7 +14,7 @@ class DatasetSummary(CamelModel):
     row_count: Optional[int] = None
     status: str
     uploaded_at: datetime
-    available_fields: List[str] = []
+    available_fields: Optional[List[str]] = []
 
 
 class DatasetDetail(DatasetSummary):

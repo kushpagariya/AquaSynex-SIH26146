@@ -23,7 +23,6 @@ from catboost import CatBoostClassifier
 
 from backend.utils.errors import (
     DatasetError,
-    DatasetNotFoundError,
     FeatureSchemaMismatchError,
     InvalidFeaturesError,
     MLError,
@@ -87,6 +86,31 @@ FEATURE_DISPLAY_METADATA: Dict[str, Tuple[str, Optional[str]]] = {
     "net_asn": ("Autonomous system number", "ASN"),
 }
 
+VALID_SUPPORTED_MODELS = {
+    "aquasynex_xgb_binary_v1",
+    "aquasynex_v1",
+    "aquasynex_catboost_multiclass_v1",
+}
+
+
+def _extract_config_val(config: Any, snake_key: str, camel_key: str, default: Any) -> Any:
+    """Safely extract a config value from a Pydantic object, dict (snake or camel), or None."""
+    if config is None:
+        return default
+    if isinstance(config, dict):
+        if snake_key in config and config[snake_key] is not None:
+            return config[snake_key]
+        if camel_key in config and config[camel_key] is not None:
+            return config[camel_key]
+        return default
+    val = getattr(config, snake_key, None)
+    if val is not None:
+        return val
+    val = getattr(config, camel_key, None)
+    if val is not None:
+        return val
+    return default
+
 
 def map_risk_level(risk_score: float) -> str:
     """Map continuous risk probability to standardized risk level.
@@ -130,9 +154,8 @@ def _resolve_model_paths(models_dir: str, model_id: str, model_version: str) -> 
     except Exception as exc:
         raise ModelLoadError(f"Failed to read model metadata: {exc}") from exc
 
-    # Explicit rejection of unsupported or placeholder model IDs
-    unsupported_models = {"isolation_forest_v1", "isolation_forest", "iforest_v1"}
-    if model_id in unsupported_models:
+    # Explicit rejection of unsupported or uninstalled model IDs
+    if model_id not in VALID_SUPPORTED_MODELS:
         raise ModelLoadError(
             f"ML pipeline module 'pipeline.ml.model_inference' is not installed or model '{model_id}' artifact is unavailable",
             details={"modelId": model_id, "modelVersion": model_version},
@@ -166,9 +189,22 @@ def _load_dataset_records(
     observational: Dict[str, pd.DataFrame] = {}
 
     # 1. Attempt extraction from DuckDB
+    is_custom_db = False
+    custom_con = None
     try:
+        from backend.config import settings
         from backend.db.connection import get_db_connection
-        con = get_db_connection()
+
+        if db_path and Path(db_path).is_file():
+            try:
+                if Path(db_path).resolve() != Path(settings.DB_PATH).resolve():
+                    custom_con = duckdb.connect(str(db_path), read_only=True)
+                    is_custom_db = True
+            except Exception:
+                custom_con = None
+
+        con = custom_con if is_custom_db and custom_con is not None else get_db_connection()
+
         df_tx = con.execute("SELECT * FROM transactions WHERE dataset_id = ?", [dataset_id]).fetchdf()
         df_in = con.execute("SELECT * FROM transaction_inputs WHERE dataset_id = ?", [dataset_id]).fetchdf()
         df_out = con.execute("SELECT * FROM transaction_outputs WHERE dataset_id = ?", [dataset_id]).fetchdf()
@@ -184,22 +220,25 @@ def _load_dataset_records(
             observational["network_events"] = df_net
     except Exception as exc:
         logger.warning(f"Failed to query DuckDB for dataset {dataset_id}: {exc}")
+    finally:
+        if is_custom_db and custom_con is not None:
+            try:
+                custom_con.close()
+            except Exception:
+                pass
 
     # 2. If transactions still empty, check disk in data_dir / dataset_id
     dataset_dir = Path(data_dir) / dataset_id
     if ("transactions" not in observational or observational["transactions"].empty) and dataset_dir.exists():
-        # Check for parquet files
         if (dataset_dir / "transactions.parquet").exists():
             ingest_engine = DataIngestionEngine(dataset_id=dataset_id)
             obs, _ = ingest_engine.load_from_parquet_dir(str(dataset_dir))
             observational = obs
         else:
-            # Check for consolidated SIH files or CSV uploads
             for cand in dataset_dir.iterdir():
-                if cand.suffix in (".csv", ".parquet") and "sih" in cand.name.lower():
-                    con = duckdb.connect()
-                    raw_df = con.execute(f"SELECT * FROM '{str(cand).replace(os.sep, '/')}'").fetchdf()
-                    con.close()
+                if cand.suffix in (".csv", ".parquet"):
+                    with duckdb.connect() as disk_con:
+                        raw_df = disk_con.execute(f"SELECT * FROM '{str(cand).replace(os.sep, '/')}'").fetchdf()
                     normalizer = DataNormalizationEngine(dataset_id=dataset_id)
                     observational = normalizer._decompose_sih_to_canonical(raw_df)
                     break
@@ -209,9 +248,8 @@ def _load_dataset_records(
         for net_name in ["network_events.parquet", "network_events_sample.csv", "network_events.csv"]:
             net_file = dataset_dir / net_name
             if net_file.exists():
-                con = duckdb.connect()
-                observational["network_events"] = con.execute(f"SELECT * FROM '{str(net_file).replace(os.sep, '/')}'").fetchdf()
-                con.close()
+                with duckdb.connect() as disk_con:
+                    observational["network_events"] = disk_con.execute(f"SELECT * FROM '{str(net_file).replace(os.sep, '/')}'").fetchdf()
                 break
 
     # Enforce non-empty transactions
@@ -228,7 +266,7 @@ def _load_dataset_records(
             details={"datasetId": dataset_id, "requiredTable": "network_events"},
         )
 
-    # Ensure bidirectional column mapping between DuckDB and ML engine expectations
+    # 4. Bidirectional column mapping and data integrity guards
     for k in ["transactions", "transaction_inputs", "transaction_outputs", "network_events"]:
         if k in observational and not observational[k].empty:
             df = observational[k]
@@ -239,19 +277,72 @@ def _load_dataset_records(
             if "dataset_id" not in df.columns:
                 df["dataset_id"] = dataset_id
 
+    # Transactions alignment
+    df_tx = observational["transactions"]
+    if "transaction_size_bytes" not in df_tx.columns and "size_bytes" in df_tx.columns:
+        df_tx["transaction_size_bytes"] = df_tx["size_bytes"]
+    elif "size_bytes" not in df_tx.columns and "transaction_size_bytes" in df_tx.columns:
+        df_tx["size_bytes"] = df_tx["transaction_size_bytes"]
+    if "transaction_size_bytes" not in df_tx.columns:
+        df_tx["transaction_size_bytes"] = 250
+
+    if "fee_satoshi" not in df_tx.columns:
+        if "fee" in df_tx.columns:
+            df_tx["fee_satoshi"] = df_tx["fee"]
+        elif "total_input_value_satoshi" in df_tx.columns and "total_output_value_satoshi" in df_tx.columns:
+            df_tx["fee_satoshi"] = np.maximum(df_tx["total_input_value_satoshi"] - df_tx["total_output_value_satoshi"], 0)
+        else:
+            df_tx["fee_satoshi"] = 0
+
+    if "input_count" not in df_tx.columns:
+        df_tx["input_count"] = 1
+    if "output_count" not in df_tx.columns:
+        df_tx["output_count"] = 1
+
+    # Inputs alignment
     if "transaction_inputs" in observational and not observational["transaction_inputs"].empty:
         df_in = observational["transaction_inputs"]
         if "address" not in df_in.columns and "input_address" in df_in.columns:
             df_in["address"] = df_in["input_address"]
+        if "input_address" not in df_in.columns and "address" in df_in.columns:
+            df_in["input_address"] = df_in["address"]
         if "amount_satoshi" not in df_in.columns and "input_value_satoshi" in df_in.columns:
             df_in["amount_satoshi"] = df_in["input_value_satoshi"]
+        if "input_value_satoshi" not in df_in.columns and "amount_satoshi" in df_in.columns:
+            df_in["input_value_satoshi"] = df_in["amount_satoshi"]
+        if "input_index" not in df_in.columns:
+            df_in["input_index"] = df_in.groupby("txid").cumcount()
 
+    # Outputs alignment
     if "transaction_outputs" in observational and not observational["transaction_outputs"].empty:
         df_out = observational["transaction_outputs"]
         if "address" not in df_out.columns and "output_address" in df_out.columns:
             df_out["address"] = df_out["output_address"]
+        if "output_address" not in df_out.columns and "address" in df_out.columns:
+            df_out["output_address"] = df_out["address"]
         if "amount_satoshi" not in df_out.columns and "output_value_satoshi" in df_out.columns:
             df_out["amount_satoshi"] = df_out["output_value_satoshi"]
+        if "output_value_satoshi" not in df_out.columns and "amount_satoshi" in df_out.columns:
+            df_out["output_value_satoshi"] = df_out["amount_satoshi"]
+        if "output_index" not in df_out.columns:
+            df_out["output_index"] = df_out.groupby("txid").cumcount()
+
+    # Network events alignment & type cleanup
+    df_net = observational["network_events"]
+    if "asn" in df_net.columns:
+        df_net["asn"] = (
+            df_net["asn"]
+            .astype(str)
+            .str.extract(r"(\d+)", expand=False)
+            .fillna(0)
+            .astype("int64")
+        )
+    if "src_port" in df_net.columns:
+        df_net["src_port"] = pd.to_numeric(df_net["src_port"], errors="coerce").fillna(0).astype(int)
+    if "dst_port" in df_net.columns:
+        df_net["dst_port"] = pd.to_numeric(df_net["dst_port"], errors="coerce").fillna(8333).astype(int)
+    if "country" in df_net.columns:
+        df_net["country"] = df_net["country"].fillna("UNKNOWN").astype(str)
 
     return observational
 
@@ -297,7 +388,7 @@ def run_analysis(
     # 6. Extract tabular feature matrix (40 features + transaction_id)
     fe_pipeline = FeatureEngineeringPipeline()
     try:
-        f_tab, quality = fe_pipeline.build_feature_matrix(canonical)
+        f_tab, _ = fe_pipeline.build_feature_matrix(canonical)
     except Exception as exc:
         raise InvalidFeaturesError(f"Tabular feature extraction failed: {exc}") from exc
 
@@ -312,9 +403,13 @@ def run_analysis(
     merged = f_tab.merge(f_graph, on="transaction_id", how="left")
 
     # Apply max_entities limit from config if present
-    max_entities = getattr(config, "max_entities", 10000) or 10000
+    max_entities = _extract_config_val(config, "max_entities", "maxEntities", 10000) or 10000
     if len(merged) > max_entities:
         merged = merged.iloc[:max_entities].copy()
+
+    if len(merged) == 0:
+        logger.info(f"[ML Adapter] 0 entities to analyze for dataset {dataset_id}")
+        return []
 
     # 9. Load preprocessor and transform features
     try:
@@ -329,6 +424,10 @@ def run_analysis(
             f"Feature schema mismatch. Missing numeric: {missing_num}, missing categorical: {missing_cat}",
             details={"missingNumeric": missing_num, "missingCategorical": missing_cat},
         )
+
+    # Clean any residual NaNs in feature space before preprocessor transformation
+    merged[prep["numeric_cols"]] = merged[prep["numeric_cols"]].fillna(0.0)
+    merged[prep["categorical_cols"]] = merged[prep["categorical_cols"]].fillna("UNKNOWN")
 
     try:
         X_num = prep["scaler"].transform(merged[prep["numeric_cols"]])
@@ -366,7 +465,7 @@ def run_analysis(
 
     # 12. Build backend MLResult envelopes
     now_utc = datetime.now(timezone.utc)
-    top_explanations_k = getattr(config, "top_explanations", 5) or 5
+    top_explanations_k = _extract_config_val(config, "top_explanations", "topExplanations", 5) or 5
     all_feature_names = prep["all_feature_names"]
     results: List[Dict[str, Any]] = []
 
@@ -387,10 +486,28 @@ def run_analysis(
         explanations = []
         for rank, idx in enumerate(top_indices, start=1):
             feat_name = all_feature_names[idx]
-            display_label, unit = FEATURE_DISPLAY_METADATA.get(feat_name, (feat_name.replace("_", " ").title(), None))
+            display_label, unit = FEATURE_DISPLAY_METADATA.get(
+                feat_name, (feat_name.replace("_", " ").title(), None)
+            )
             shap_val = float(row_shap[idx])
             norm_imp = float(abs(shap_val) / total_abs) if total_abs > 0 else 0.0
             direction = "increases_risk" if shap_val > 0 else ("decreases_risk" if shap_val < 0 else "neutral")
+
+            # Determine actual display value for investigator
+            feat_val = None
+            if feat_name in merged.columns:
+                raw_v = merged[feat_name].iloc[i]
+                if pd.notna(raw_v):
+                    if isinstance(raw_v, (int, np.integer)):
+                        feat_val = int(raw_v)
+                    elif isinstance(raw_v, (float, np.floating)):
+                        feat_val = round(float(raw_v), 4)
+                    elif isinstance(raw_v, (bool, np.bool_)):
+                        feat_val = bool(raw_v)
+                    else:
+                        feat_val = str(raw_v)
+            if feat_val is None:
+                feat_val = round(float(X_transformed[i, idx]), 4)
 
             explanations.append({
                 "feature_name": feat_name,
@@ -399,16 +516,18 @@ def run_analysis(
                 "direction": direction,
                 "importance_rank": rank,
                 "normalized_importance": norm_imp,
-                "feature_value": float(X_transformed[i, idx]),
+                "feature_value": feat_val,
                 "feature_unit": unit,
             })
 
-        # Serialized feature values
+        # Serialized feature values (guarantee valid JSON, no float NaN)
         features_list = []
         for col in metadata.get("features", {}).get("canonical_names", []):
             if col in merged.columns:
                 raw_val = merged[col].iloc[i]
-                if isinstance(raw_val, (int, np.integer)):
+                if pd.isna(raw_val):
+                    val = None
+                elif isinstance(raw_val, (int, np.integer)):
                     val = int(raw_val)
                 elif isinstance(raw_val, (float, np.floating)):
                     val = float(raw_val)
@@ -416,6 +535,7 @@ def run_analysis(
                     val = bool(raw_val)
                 else:
                     val = str(raw_val)
+
                 features_list.append({
                     "feature_name": col,
                     "raw_value": val,

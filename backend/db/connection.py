@@ -1,6 +1,6 @@
 """DuckDB connection provider and thread-safe execution manager.
 
-Authoritative reference: docs/backend/backend-architecture.md
+Authoritative reference: docs/backend/backend-architecture.md.
 DuckDB opens one connection per process; thread-safe execution lock is used for writes.
 """
 
@@ -16,6 +16,7 @@ from backend.utils.logging import logger
 
 _connection: Optional[duckdb.DuckDBPyConnection] = None
 _lock = threading.RLock()
+_local = threading.local()
 
 
 def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
@@ -29,6 +30,8 @@ def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
             conn = duckdb.connect(database=target_path)
             run_migrations(conn)
             _connection = conn
+            if hasattr(_local, "cursor"):
+                _local.cursor = None
             logger.info(f"Connected to DuckDB database at: {target_path}")
             return _connection
         except Exception as exc:
@@ -43,18 +46,27 @@ def init_db(database_path: Optional[str] = None) -> duckdb.DuckDBPyConnection:
 
 
 def get_db_connection() -> duckdb.DuckDBPyConnection:
-    """Get the active DuckDB connection, initializing if not already open."""
+    """Get a thread-safe DuckDB cursor for the current thread."""
     global _connection
     with _lock:
         if _connection is None:
-            return init_db()
-        return _connection
+            init_db()
+    if not hasattr(_local, "cursor") or _local.cursor is None:
+        with _lock:
+            _local.cursor = _connection.cursor()
+    return _local.cursor
 
 
 def close_db() -> None:
-    """Close active DuckDB connection."""
+    """Close active DuckDB connection and thread cursor."""
     global _connection
     with _lock:
+        if hasattr(_local, "cursor") and _local.cursor is not None:
+            try:
+                _local.cursor.close()
+            except Exception:
+                pass
+            _local.cursor = None
         if _connection is not None:
             try:
                 _connection.close()

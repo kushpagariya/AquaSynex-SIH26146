@@ -1,6 +1,6 @@
 """FastAPI application entry point for AquaSynex Backend.
 
-SIH26146 – AI-Powered Monitoring & Analysis of Bitcoin Transaction Traffic
+SIH26146 – AI-Powered Monitoring & Analysis of Bitcoin Transaction Traffic.
 Authoritative reference: docs/backend/backend-architecture.md
 """
 
