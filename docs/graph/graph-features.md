@@ -1,160 +1,90 @@
-# Graph Features
+# Graph Features & Link Analysis Specification (Phase 2.4)
 
 **SIH26146 – AI-Powered Monitoring & Analysis of Bitcoin Transaction Traffic**
 
-> Graph features are computed by the Graph Layer and consumed by the ML Layer.
-> Feature names here are canonical and must match [feature-specification.md](../ml/feature-specification.md).
+> **Authoritative Specification**: Graph features are derived from the bipartite directed graph (`Address → Transaction → Address`) and consumed by the ML Layer.
+> All features in the ML feature set are strictly historical ($t < T_{\text{tx}}$ or $t \le T_{\text{tx}}$ snapshot) to prevent temporal data leakage.
 
-**Status**: `PLANNED`
+**Status**: `IMPLEMENTED`
 
 ---
 
-## 1. Feature Extraction Pipeline
+## 1. Feature Extraction Pipeline & Temporal Boundaries
 
 ```
-NetworkX DiGraph (in-memory)
-    │
-    ├── Degree computation (all nodes)
-    ├── Weighted degree computation
-    ├── PageRank (all nodes)
-    ├── Connected components (all nodes)
-    └── [CANDIDATE] Betweenness centrality (sampled)
+Canonical Parquet / DuckDB
     │
     ▼
-Graph Feature DataFrame
-    index: address_id (string)
-    columns: canonical graph feature names
+Chronological Stream (sorted by timestamp_epoch_sec)
+    │
+    ├── [1] Entity Clustering (Multi-Input & Change Heuristics)
+    │       Captured BEFORE updating cluster state (t < T_tx)
+    │       ──> hist_cluster_id, hist_cluster_size, hist_cluster_tx_count
+    │
+    ├── [2] Historical Degree Tracking
+    │       Incident edges observed prior to current tx (t < T_tx)
+    │       ──> hist_in_mean_neighbor_degree, hist_out_mean_neighbor_degree
+    │
+    ├── [3] Address Reuse Tracking
+    │       Inputs previously observed prior to tx (t < T_tx)
+    │       ──> hist_address_reuse_ratio
+    │
+    ├── [4] Bipartite Graph Snapshot (t <= T_tx)
+    │       Component state as-of transaction execution
+    │       ──> hist_component_size
+    │
+    └── [5] Transaction Local Topology (intrinsic to tx)
+            ──> graph_fan_in, graph_fan_out, graph_unique_in_addrs, graph_unique_out_addrs
     │
     ▼
-Merge with tabular feature DataFrame
-    │
-    ▼
-Combined Feature Matrix → ML Model
-```
-
----
-
-## 2. Computed Graph Features
-
-### `graph_in_degree`
-
-| Property | Value |
-|---|---|
-| Canonical name | `graph_in_degree` |
-| Formula | `G.in_degree(node)` |
-| Type | `integer` |
-| Status | `PLANNED` |
-| NetworkX API | `G.in_degree()` |
-| Notes | Number of incoming edges (sending addresses) |
-
----
-
-### `graph_out_degree`
-
-| Property | Value |
-|---|---|
-| Canonical name | `graph_out_degree` |
-| Formula | `G.out_degree(node)` |
-| Type | `integer` |
-| Status | `PLANNED` |
-| NetworkX API | `G.out_degree()` |
-| Notes | Number of outgoing edges (receiving addresses) |
-
----
-
-### `graph_weighted_in_degree`
-
-| Property | Value |
-|---|---|
-| Canonical name | `graph_weighted_in_degree` |
-| Formula | `sum(G[u][node]['value_satoshi'] for u in G.predecessors(node))` |
-| Type | `float` (satoshis) |
-| Status | `PLANNED` |
-| NetworkX API | `G.in_degree(node, weight='value_satoshi')` |
-
----
-
-### `graph_weighted_out_degree`
-
-| Property | Value |
-|---|---|
-| Canonical name | `graph_weighted_out_degree` |
-| Formula | `sum(G[node][v]['value_satoshi'] for v in G.successors(node))` |
-| Type | `float` (satoshis) |
-| Status | `PLANNED` |
-| NetworkX API | `G.out_degree(node, weight='value_satoshi')` |
-
----
-
-### `graph_pagerank`
-
-| Property | Value |
-|---|---|
-| Canonical name | `graph_pagerank` |
-| Formula | `nx.pagerank(G, weight='value_satoshi')` |
-| Type | `float` |
-| Range | (0.0, 1.0) |
-| Status | `PLANNED` |
-| NetworkX API | `nx.pagerank(G, alpha=0.85, max_iter=100, tol=1e-6)` |
-| Notes | Use `weight='value_satoshi'` to weight edges by BTC value |
-
----
-
-### `graph_connected_component_size`
-
-| Property | Value |
-|---|---|
-| Canonical name | `graph_connected_component_size` |
-| Formula | `len(component containing node)` for weakly connected components |
-| Type | `integer` |
-| Status | `PLANNED` |
-| NetworkX API | `nx.weakly_connected_components(G)` |
-
----
-
-### `graph_betweenness_centrality`
-
-| Property | Value |
-|---|---|
-| Canonical name | `graph_betweenness_centrality` |
-| Formula | Fraction of shortest paths passing through node |
-| Type | `float` |
-| Status | `CANDIDATE` |
-| NetworkX API | `nx.betweenness_centrality(G, k=500, normalized=True)` (sampled) |
-| Notes | Expensive on large graphs. Only compute if graph has < 100K nodes, or use k-sampling. |
-
----
-
-## 3. Feature DataFrame Format
-
-```python
-# Output DataFrame
-graph_features: pd.DataFrame = pd.DataFrame({
-    "entity_id": [...],                          # Bitcoin address
-    "graph_in_degree": [...],                    # int
-    "graph_out_degree": [...],                   # int
-    "graph_weighted_in_degree": [...],           # float
-    "graph_weighted_out_degree": [...],          # float
-    "graph_pagerank": [...],                     # float
-    "graph_connected_component_size": [...],     # int
-})
-# index: 0..N-1 (reset index)
+Graph Feature Table: data/processed/graph/graph_features.parquet
+    (10,000 rows x 12 columns: 1 key + 11 features)
 ```
 
 ---
 
-## 4. Missing Node Handling
+## 2. Canonical ML Graph Feature Catalog (11 Features + 1 Key)
 
-If an address in the canonical data is not in the graph (e.g., output-only address with no recorded inputs):
-
-- Set all in-degree features to `0`
-- Set all out-degree features to `0`
-- Set `graph_pagerank` to the minimum observed value in the dataset
-- Set `graph_connected_component_size` to `1` (singleton)
-
-These are handled by the feature engineering imputation step, not the graph layer itself.
+| Column Name | Type | Temporal Scope | Description | Anti-Leakage Rationale |
+|---|---|---|---|---|
+| `transaction_id` | `VARCHAR` | N/A | Primary key matching `canonical_transactions`. | Deterministic identifier. |
+| `graph_fan_in` | `BIGINT` | $T_{\text{tx}}$ | Total count of inputs to transaction node. | Intrinsic to transaction structure. |
+| `graph_fan_out` | `BIGINT` | $T_{\text{tx}}$ | Total count of outputs from transaction node. | Intrinsic to transaction structure. |
+| `graph_unique_in_addrs` | `BIGINT` | $T_{\text{tx}}$ | Count of distinct input addresses. | Intrinsic to transaction structure. |
+| `graph_unique_out_addrs` | `BIGINT` | $T_{\text{tx}}$ | Count of distinct output addresses. | Intrinsic to transaction structure. |
+| `hist_in_mean_neighbor_degree` | `DOUBLE` | $t < T_{\text{tx}}$ | Average degree of input addresses strictly before $T_{\text{tx}}$. | Evaluated only from prior transactions; never sees future activity. |
+| `hist_out_mean_neighbor_degree` | `DOUBLE` | $t < T_{\text{tx}}$ | Average degree of output addresses strictly before $T_{\text{tx}}$. | Evaluated only from prior transactions; never sees future activity. |
+| `hist_component_size` | `BIGINT` | $t \le T_{\text{tx}}$ | Size (node count) of weakly connected component at timestamp. | Bipartite component evaluated at snapshot; future connections do not back-propagate. |
+| `hist_address_reuse_ratio` | `DOUBLE` | $t < T_{\text{tx}}$ | Proportion of input addresses previously observed in stream. | Strict historical lookback. |
+| `hist_cluster_id` | `VARCHAR` | $t < T_{\text{tx}}$ | Primary input address cluster root prior to transaction. | Captured before unioning inputs or change outputs. |
+| `hist_cluster_size` | `BIGINT` | $t < T_{\text{tx}}$ | Distinct address count in primary cluster prior to transaction. | Captured before unioning inputs or change outputs. |
+| `hist_cluster_tx_count` | `BIGINT` | $t < T_{\text{tx}}$ | Cumulative transaction count of cluster prior to transaction. | Incremented only after feature recording. |
 
 ---
 
-*Last updated: 2026-09-11 | Status: PLANNED | Owner: ML Owner (Graph)*
-*References: [feature-specification.md](../ml/feature-specification.md) | [graph-construction.md](./graph-construction.md)*
+## 3. Post-Hoc Macroscopic Metrics (Strictly Quarantined from ML)
+
+The following metrics require the complete, aggregate graph topology. Incorporating them into transaction-level feature matrices constitutes **catastrophic temporal leakage** (future graph topology leaking into past events).
+
+They are computed exclusively by `ml/graph_analysis/graph_metrics.py` and exported to `data/processed/graph/graph_summary.json` for architectural verification:
+
+1. **Full-Graph PageRank (`graph_pagerank`)**:
+   - Computes stationary state across the entire transaction dataset.
+   - Quarantined: Exported in `graph_summary.json` and visualized in exploratory notebooks only.
+2. **Static Giant Component Membership (`is_giant_component`)**:
+   - In a full retrospective graph, almost all active nodes coalesce into a single giant component.
+   - Quarantined: Replaced in ML by `hist_component_size` (snapshot $t \le T_{\text{tx}}$).
+3. **Full-Graph Louvain Modularity Communities**:
+   - Macroscopic partition of the entire transaction network into dense behavioral communities.
+
+---
+
+## 4. Integration with Tabular Feature Matrix
+
+In Phase 2.5 (Feature Store Integration), `graph_features.parquet` will be joined on `transaction_id` with `feature_matrix_v1.parquet` (Phase 2.3 tabular features, 40 features):
+
+$$\text{Combined Feature Space} = 40 \text{ Tabular Features} + 11 \text{ Graph Features} = 51 \text{ Predictive Features}$$
+
+---
+
+*Last updated: 2026-09-12 | Status: IMPLEMENTED | Owner: ML Owner (Graph)*

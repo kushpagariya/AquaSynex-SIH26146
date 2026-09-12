@@ -1,0 +1,225 @@
+{
+  "model_version": "1.0.0",
+  "release_tag": "Phase2.7-Production-Freeze",
+  "generated_at_utc": "2026-09-12T03:56:45Z",
+  "dataset": {
+    "source": "data/processed/modeling_v2/modeling_dataset.parquet",
+    "version": "2.0.0",
+    "benchmark_type": "Hardened Synthetic Benchmark (v2)",
+    "total_records": 10000,
+    "train_rows": 7000,
+    "val_rows": 1500,
+    "test_rows": 1500
+  },
+  "artifacts": {
+    "xgb_binary_model": {
+      "path": "models/aquasynex_xgb_binary_v1.json",
+      "sha256": "80994bb26b9ed3d3a88ba3e03d8a14f6c83c4307e047753a6d6157119ad0abe4",
+      "library": "xgboost",
+      "version": "2.1.4"
+    },
+    "catboost_multiclass_model": {
+      "path": "models/aquasynex_catboost_multiclass_v1.cbm",
+      "sha256": "31a16f6d54fb9eec9de420bbec4fba4f5719cead624eae40d61a2b45e06dd115",
+      "library": "catboost",
+      "version": "1.2.7"
+    },
+    "preprocessor": {
+      "path": "models/preprocessor_v1.joblib",
+      "sha256": "68d45547ab70b41bfe759006e4e2beffb564a89c2aa8e4031591bffc1cb0da15",
+      "library": "joblib / scikit-learn",
+      "version": "1.5.3"
+    }
+  },
+  "features": {
+    "canonical_input_count": 46,
+    "numeric_count": 44,
+    "categorical_count": 2,
+    "post_transform_dimension": 71,
+    "canonical_names": [
+      "tx_input_count",
+      "tx_output_count",
+      "tx_input_output_ratio",
+      "tx_total_input_sats",
+      "tx_total_output_sats",
+      "tx_fee_sats",
+      "tx_size_bytes",
+      "tx_fee_rate_sat_per_byte",
+      "tx_value_balance_ratio",
+      "tx_avg_input_value_sats",
+      "tx_max_input_value_sats",
+      "tx_avg_output_value_sats",
+      "tx_max_output_value_sats",
+      "tx_log_total_value",
+      "tx_log_fee",
+      "addr_hist_tx_count",
+      "addr_hist_total_sent_sats",
+      "addr_hist_total_received_sats",
+      "addr_hist_avg_tx_val_sats",
+      "addr_hist_unique_counterparties",
+      "addr_hist_active_days",
+      "addr_hist_tx_per_day",
+      "addr_reuse_count",
+      "time_hour_of_day",
+      "time_day_of_week",
+      "time_since_prev_global_tx_sec",
+      "time_txs_last_1m",
+      "time_txs_last_5m",
+      "time_txs_last_1h",
+      "time_since_prev_addr_tx_sec",
+      "net_src_port",
+      "net_dst_port",
+      "net_is_standard_bitcoin_port",
+      "net_hist_unique_ips_for_addr",
+      "rel_fan_in",
+      "rel_fan_out",
+      "rel_has_change_output",
+      "rel_change_value_ratio",
+      "hist_in_mean_neighbor_degree",
+      "hist_out_mean_neighbor_degree",
+      "hist_component_size",
+      "hist_address_reuse_ratio",
+      "hist_cluster_size",
+      "hist_cluster_tx_count",
+      "net_country",
+      "net_asn"
+    ],
+    "transformed_names": [
+      "tx_input_count",
+      "tx_output_count",
+      "tx_input_output_ratio",
+      "tx_total_input_sats",
+      "tx_total_output_sats",
+      "tx_fee_sats",
+      "tx_size_bytes",
+      "tx_fee_rate_sat_per_byte",
+      "tx_value_balance_ratio",
+      "tx_avg_input_value_sats",
+      "tx_max_input_value_sats",
+      "tx_avg_output_value_sats",
+      "tx_max_output_value_sats",
+      "tx_log_total_value",
+      "tx_log_fee",
+      "addr_hist_tx_count",
+      "addr_hist_total_sent_sats",
+      "addr_hist_total_received_sats",
+      "addr_hist_avg_tx_val_sats",
+      "addr_hist_unique_counterparties",
+      "addr_hist_active_days",
+      "addr_hist_tx_per_day",
+      "addr_reuse_count",
+      "time_hour_of_day",
+      "time_day_of_week",
+      "time_since_prev_global_tx_sec",
+      "time_txs_last_1m",
+      "time_txs_last_5m",
+      "time_txs_last_1h",
+      "time_since_prev_addr_tx_sec",
+      "net_src_port",
+      "net_dst_port",
+      "net_is_standard_bitcoin_port",
+      "net_hist_unique_ips_for_addr",
+      "rel_fan_in",
+      "rel_fan_out",
+      "rel_has_change_output",
+      "rel_change_value_ratio",
+      "hist_in_mean_neighbor_degree",
+      "hist_out_mean_neighbor_degree",
+      "hist_component_size",
+      "hist_address_reuse_ratio",
+      "hist_cluster_size",
+      "hist_cluster_tx_count",
+      "net_country_BZ",
+      "net_country_CA",
+      "net_country_CH",
+      "net_country_DE",
+      "net_country_FR",
+      "net_country_GB",
+      "net_country_IN",
+      "net_country_IR",
+      "net_country_JP",
+      "net_country_NL",
+      "net_country_PA",
+      "net_country_RU",
+      "net_country_SC",
+      "net_country_SE",
+      "net_country_SG",
+      "net_country_US",
+      "net_asn_3320",
+      "net_asn_7018",
+      "net_asn_7922",
+      "net_asn_9009",
+      "net_asn_13335",
+      "net_asn_14061",
+      "net_asn_15169",
+      "net_asn_16276",
+      "net_asn_16509",
+      "net_asn_24940",
+      "net_asn_60068"
+    ]
+  },
+  "operating_points": {
+    "default_tau_0_50": {
+      "threshold": 0.5,
+      "val_metrics": {
+        "recall": 0.9763,
+        "precision": 0.9702,
+        "f1": 0.9733
+      },
+      "test_metrics": {
+        "recall": 0.9677,
+        "precision": 0.9724,
+        "f1": 0.97
+      }
+    },
+    "f1_optimal_tau_0_32": {
+      "threshold": 0.32,
+      "val_metrics": {
+        "recall": 0.9921,
+        "precision": 0.9632,
+        "f1": 0.9775
+      },
+      "test_metrics": {
+        "recall": 0.9871,
+        "precision": 0.9517,
+        "f1": 0.9691
+      }
+    },
+    "high_precision_r95_tau_0_67": {
+      "threshold": 0.67,
+      "val_metrics": {
+        "recall": 0.9543,
+        "precision": 0.9821,
+        "f1": 0.968
+      },
+      "test_metrics": {
+        "recall": 0.9499,
+        "precision": 0.9833,
+        "f1": 0.9663
+      }
+    }
+  },
+  "temporal_generalization": {
+    "roc_auc": {
+      "val": 0.9981,
+      "test": 0.9977,
+      "delta": -0.0005
+    },
+    "pr_auc": {
+      "val": 0.9976,
+      "test": 0.9965,
+      "delta": -0.0011
+    },
+    "multiclass_accuracy": {
+      "val": 0.966,
+      "test": 0.9673,
+      "delta": 0.0013
+    },
+    "multiclass_macro_f1": {
+      "val": 0.9566,
+      "test": 0.9469,
+      "delta": -0.0097
+    }
+  },
+  "scientific_disclaimer": "All metrics were evaluated on the AquaSynex hardened synthetic development benchmark (v2.0.0). These results validate the algorithmic integrity and UTXO topological graph features, but do NOT constitute proof of real-world Bitcoin criminal detection without validation on empirical public ledgers."
+}

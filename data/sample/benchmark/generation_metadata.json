@@ -1,0 +1,35 @@
+{
+  "dataset_name": "AquaSynex-SIH26146-Synthetic-Dev",
+  "generator_version": "1.0.0",
+  "schema_version": "1.0.0",
+  "generation_timestamp": "2026-09-11T20:45:35.360253+00:00",
+  "random_seed": 42,
+  "total_transactions": 10000,
+  "total_inputs": 11160,
+  "total_outputs": 22775,
+  "total_network_events": 10000,
+  "total_entities": 1000,
+  "total_labels": 10000,
+  "time_range": {
+    "start": "2026-01-01T00:00:56+00:00",
+    "end": "2026-01-06T07:13:31+00:00"
+  },
+  "scenario_distribution": {
+    "normal": 8538,
+    "peeling_chain": 281,
+    "transaction_burst": 280,
+    "rapid_multihop": 265,
+    "coordinated_activity": 195,
+    "benign_high_volume": 143,
+    "mixing_like": 72,
+    "temporal_anomaly": 70,
+    "high_fan_out": 65,
+    "high_fan_in": 59,
+    "amount_anomaly": 32
+  },
+  "ground_truth_distribution": {
+    "0": 8681,
+    "1": 1319
+  },
+  "disclaimer": "This dataset is a project-generated synthetic development dataset inspired by the SIH26146 problem statement. It contains no real user, wallet, or criminal data."
+}
