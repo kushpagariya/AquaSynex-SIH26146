@@ -116,8 +116,8 @@ class DatasetService:
             self._ingest_file(dataset_id, dest_path, format_str)
         except Exception as exc:
             logger.error(f"Ingestion failed for dataset {dataset_id}: {exc}")
-            # Rollback partially ingested rows for this dataset
             try:
+                self.conn.execute("DELETE FROM network_events WHERE dataset_id = ?", [dataset_id])
                 self.conn.execute("DELETE FROM transaction_inputs WHERE dataset_id = ?", [dataset_id])
                 self.conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
                 self.conn.execute("DELETE FROM transactions WHERE dataset_id = ?", [dataset_id])
@@ -125,7 +125,7 @@ class DatasetService:
             except Exception as rollback_exc:
                 logger.warning(f"Failed to rollback partial ingestion records: {rollback_exc}")
 
-            dataset_queries.update_dataset_status(
+            dataset_queries.update_dataset(
                 conn=self.conn,
                 dataset_id=dataset_id,
                 status="error",
@@ -163,6 +163,12 @@ class DatasetService:
         in_addr_col = raw_cols_lower.get("input_address") or raw_cols_lower.get("sender") or raw_cols_lower.get("from_address")
         out_addr_col = raw_cols_lower.get("output_address") or raw_cols_lower.get("receiver") or raw_cols_lower.get("to_address")
         label_col = raw_cols_lower.get("label") or raw_cols_lower.get("class") or raw_cols_lower.get("is_illicit") or raw_cols_lower.get("category")
+        src_ip_col = raw_cols_lower.get("src_ip") or raw_cols_lower.get("source_ip")
+        src_port_col = raw_cols_lower.get("src_port") or raw_cols_lower.get("source_port")
+        dst_ip_col = raw_cols_lower.get("dst_ip") or raw_cols_lower.get("dest_ip") or raw_cols_lower.get("destination_ip")
+        dst_port_col = raw_cols_lower.get("dst_port") or raw_cols_lower.get("dest_port") or raw_cols_lower.get("destination_port")
+        country_col = raw_cols_lower.get("country") or raw_cols_lower.get("net_country")
+        asn_col = raw_cols_lower.get("asn") or raw_cols_lower.get("net_asn")
 
         if not tx_col:
             # Fallback: if no tx column, generate row hash or UUID surrogate
@@ -322,6 +328,37 @@ class DatasetService:
             """
             self.conn.execute(insert_in_sql)
 
+        if src_ip_col or dst_port_col or country_col or asn_col:
+            src_ip_expr = f'CAST({escape_sql_identifier(src_ip_col)} AS VARCHAR)' if src_ip_col else "'127.0.0.1'"
+            src_port_expr = f'TRY_CAST({escape_sql_identifier(src_port_col)} AS INTEGER)' if src_port_col else "0"
+            dst_ip_expr = f'CAST({escape_sql_identifier(dst_ip_col)} AS VARCHAR)' if dst_ip_col else "'127.0.0.1'"
+            dst_port_expr = f'TRY_CAST({escape_sql_identifier(dst_port_col)} AS INTEGER)' if dst_port_col else "8333"
+            country_expr = f'UPPER(TRIM(CAST({escape_sql_identifier(country_col)} AS VARCHAR)))' if country_col else "'US'"
+            asn_expr = f'TRY_CAST({escape_sql_identifier(asn_col)} AS BIGINT)' if asn_col else "0"
+
+            insert_net_sql = f"""
+            INSERT OR REPLACE INTO network_events (
+                event_id, transaction_id, dataset_id, timestamp,
+                timestamp_epoch_sec, src_ip, src_port, dst_ip, dst_port, country, asn
+            )
+            SELECT 
+                'EVT_' || {tx_col_expr} AS event_id,
+                {tx_col_expr} AS transaction_id,
+                '{dataset_id}' AS dataset_id,
+                {timestamp_expr} AS timestamp,
+                CASE WHEN {timestamp_expr} IS NOT NULL THEN epoch({timestamp_expr}) ELSE 0 END AS timestamp_epoch_sec,
+                {src_ip_expr} AS src_ip,
+                COALESCE({src_port_expr}, 0) AS src_port,
+                {dst_ip_expr} AS dst_ip,
+                COALESCE({dst_port_expr}, 8333) AS dst_port,
+                COALESCE({country_expr}, 'US') AS country,
+                COALESCE({asn_expr}, 0) AS asn
+            FROM {temp_view}
+            WHERE {tx_col_expr} IS NOT NULL
+            """
+            self.conn.execute(insert_net_sql)
+            available_fields.append("networkEvents")
+
         # Populate derived addresses table
         populate_addr_sql = f"""
         INSERT OR REPLACE INTO addresses (
@@ -362,6 +399,7 @@ class DatasetService:
             "analysisCapability": {
                 "graphAnalysis": bool(out_addr_col or in_addr_col),
                 "temporalAnalysis": bool(time_col),
+                "networkAnalysis": bool(src_ip_col or dst_port_col or country_col or asn_col),
             },
         }
 

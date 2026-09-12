@@ -191,6 +191,7 @@ def delete_dataset(conn: duckdb.DuckDBPyConnection, dataset_id: str) -> bool:
     # Cascading deletes
     conn.execute("DELETE FROM ml_results WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM analysis_runs WHERE dataset_id = ?", [dataset_id])
+    conn.execute("DELETE FROM network_events WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM transaction_inputs WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM transactions WHERE dataset_id = ?", [dataset_id])

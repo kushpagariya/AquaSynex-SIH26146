@@ -21,6 +21,54 @@ def get_available_models() -> List[ModelInfo]:
     ]
 
     models_dir = Path(settings.MODELS_DIR)
+
+    # Check for frozen model artifacts via model_metadata.json
+    meta_paths = [
+        models_dir / "model_metadata.json",
+        Path(__file__).resolve().parent.parent.parent / "models" / "model_metadata.json",
+    ]
+    meta_loaded = False
+    for mp in meta_paths:
+        if mp.exists() and not meta_loaded:
+            try:
+                import json
+                with open(mp, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                ver = meta.get("model_version", "1.0.0")
+                models.append(
+                    ModelInfo(
+                        model_id="aquasynex_xgb_binary_v1",
+                        model_version=ver,
+                        algorithm="XGBoost",
+                        model_type="classification",
+                        feature_schema_version="1.0.0",
+                        description="Supervised XGBoost binary transaction risk detector with TreeSHAP",
+                    )
+                )
+                models.append(
+                    ModelInfo(
+                        model_id="aquasynex_v1",
+                        model_version=ver,
+                        algorithm="XGBoost+CatBoost",
+                        model_type="classification",
+                        feature_schema_version="1.0.0",
+                        description="Full AquaSynex production pipeline (XGBoost + CatBoost + TreeSHAP)",
+                    )
+                )
+                models.append(
+                    ModelInfo(
+                        model_id="aquasynex_catboost_multiclass_v1",
+                        model_version=ver,
+                        algorithm="CatBoost",
+                        model_type="classification",
+                        feature_schema_version="1.0.0",
+                        description="11-class illicit transaction typology attribution model",
+                    )
+                )
+                meta_loaded = True
+            except Exception:
+                pass
+
     if models_dir.exists():
         for model_path in models_dir.iterdir():
             if model_path.is_dir() and model_path.name != settings.DEFAULT_MODEL_ID:

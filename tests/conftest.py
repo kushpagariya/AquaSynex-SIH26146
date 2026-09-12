@@ -42,6 +42,20 @@ def test_environment() -> Generator[Path, None, None]:
     settings.DB_PATH = str(temp_path / "test_aquasynex.db")
     settings.ensure_directories()
 
+    # Populate real frozen model artifacts into test models directory
+    repo_models = TEST_DIR.parent / "models"
+    if repo_models.exists():
+        import shutil
+        for art in [
+            "aquasynex_xgb_binary_v1.json",
+            "aquasynex_catboost_multiclass_v1.cbm",
+            "preprocessor_v1.joblib",
+            "model_metadata.json",
+        ]:
+            src = repo_models / art
+            if src.exists():
+                shutil.copy2(src, Path(settings.MODELS_DIR) / art)
+
     # Initialize connection and schema in the test database
     init_db(settings.DB_PATH)
 
@@ -108,6 +122,149 @@ def uploaded_dataset(client: TestClient, sample_csv_path: Path) -> Dict[str, Any
     body = resp.json()
     assert body["success"] is True
     return body["data"]
+
+
+@pytest.fixture
+def uploaded_ml_dataset(client: TestClient, db: duckdb.DuckDBPyConnection, ml_sample_dir: Path) -> Dict[str, Any]:
+    """Provide an ingested dataset equipped with canonical network events for real ML integration testing."""
+    dataset_id = "test-ml-dataset-1"
+    dataset_dir = Path(settings.DATA_DIR) / dataset_id
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy ML sample parquet files into dataset directory
+    import shutil
+    import pandas as pd
+    for fname in [
+        "transactions.parquet",
+        "transaction_inputs.parquet",
+        "transaction_outputs.parquet",
+        "network_events.parquet",
+        "labels.parquet",
+    ]:
+        src = ml_sample_dir / fname
+        if src.exists():
+            shutil.copy2(src, dataset_dir / fname)
+
+    # Ingest into DuckDB test database
+    now = datetime.now(timezone.utc)
+    db.execute(
+        """
+        INSERT OR REPLACE INTO datasets (
+            dataset_id, name, file_name, file_path, format, size_bytes,
+            row_count, canonical_tx_count, uploaded_at, status, available_fields
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            dataset_id,
+            "Deterministic ML Benchmark Dataset",
+            "transactions.parquet",
+            str(dataset_dir / "transactions.parquet"),
+            "parquet",
+            10240,
+            5,
+            5,
+            now,
+            "ready",
+            ["transactionId", "timestamp", "networkEvents", "graphAnalysis"],
+        ],
+    )
+
+    # Read and insert records into DuckDB canonical tables
+    con_sample = duckdb.connect()
+    df_tx = con_sample.execute(f"SELECT * FROM '{str(dataset_dir / 'transactions.parquet').replace(os.sep, '/')}'").fetchdf()
+    df_in = con_sample.execute(f"SELECT * FROM '{str(dataset_dir / 'transaction_inputs.parquet').replace(os.sep, '/')}'").fetchdf()
+    df_out = con_sample.execute(f"SELECT * FROM '{str(dataset_dir / 'transaction_outputs.parquet').replace(os.sep, '/')}'").fetchdf()
+    df_net = con_sample.execute(f"SELECT * FROM '{str(dataset_dir / 'network_events.parquet').replace(os.sep, '/')}'").fetchdf()
+    con_sample.close()
+
+    for _, r in df_tx.iterrows():
+        db.execute(
+            """
+            INSERT OR REPLACE INTO transactions (
+                transaction_id, dataset_id, timestamp, input_count, output_count,
+                total_input_value_satoshi, total_output_value_satoshi, fee_satoshi,
+                transaction_size_bytes, ingested_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                r["txid"], dataset_id, r["timestamp"], int(r["input_count"]), int(r["output_count"]),
+                int(r["total_input_value_satoshi"]), int(r["total_output_value_satoshi"]), int(r["fee_satoshi"]),
+                int(r["transaction_size_bytes"]), now
+            ],
+        )
+
+    for _, r in df_in.iterrows():
+        db.execute(
+            """
+            INSERT OR REPLACE INTO transaction_inputs (
+                input_id, transaction_id, dataset_id, input_index, input_address, input_value_satoshi
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [f"{r['txid']}:{r['input_index']}", r["txid"], dataset_id, int(r["input_index"]), str(r["address"]), int(r["amount_satoshi"])],
+        )
+
+    for _, r in df_out.iterrows():
+        db.execute(
+            """
+            INSERT OR REPLACE INTO transaction_outputs (
+                output_id, transaction_id, dataset_id, output_index, output_address, output_value_satoshi, is_spent
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [f"{r['txid']}:{r['output_index']}", r["txid"], dataset_id, int(r["output_index"]), str(r["address"]), int(r["amount_satoshi"]), False],
+        )
+
+    for _, r in df_net.iterrows():
+        db.execute(
+            """
+            INSERT OR REPLACE INTO network_events (
+                event_id, transaction_id, dataset_id, timestamp, timestamp_epoch_sec,
+                src_ip, src_port, dst_ip, dst_port, country, asn
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                r["event_id"], r["txid"], dataset_id, r["timestamp"],
+                int(pd.to_datetime(r["timestamp"], utc=True).timestamp()),
+                r["src_ip"], int(r["src_port"]), r["dst_ip"], int(r["dst_port"]), r["country"], int(r["asn"])
+            ],
+        )
+
+    # Populate addresses table
+    db.execute(
+        f"""
+        INSERT OR REPLACE INTO addresses (
+            address_id, dataset_id, first_seen_timestamp, last_seen_timestamp,
+            total_received_satoshi, total_sent_satoshi, transaction_count
+        )
+        SELECT 
+            t.addr AS address_id,
+            '{dataset_id}' AS dataset_id,
+            MIN(t.ts) AS first_seen_timestamp,
+            MAX(t.ts) AS last_seen_timestamp,
+            SUM(t.recv) AS total_received_satoshi,
+            SUM(t.sent) AS total_sent_satoshi,
+            COUNT(DISTINCT t.tx_id) AS transaction_count
+        FROM (
+            SELECT o.output_address AS addr, tx.timestamp AS ts, o.output_value_satoshi AS recv, 0 AS sent, o.transaction_id AS tx_id
+            FROM transaction_outputs o
+            JOIN transactions tx ON o.transaction_id = tx.transaction_id AND o.dataset_id = tx.dataset_id
+            WHERE o.dataset_id = '{dataset_id}' AND o.output_address IS NOT NULL
+            UNION ALL
+            SELECT i.input_address AS addr, tx.timestamp AS ts, 0 AS recv, i.input_value_satoshi AS sent, i.transaction_id AS tx_id
+            FROM transaction_inputs i
+            JOIN transactions tx ON i.transaction_id = tx.transaction_id AND i.dataset_id = tx.dataset_id
+            WHERE i.dataset_id = '{dataset_id}' AND i.input_address IS NOT NULL
+        ) t
+        GROUP BY t.addr
+        """
+    )
+
+    return {
+        "datasetId": dataset_id,
+        "name": "Deterministic ML Benchmark Dataset",
+        "status": "ready",
+        "rowCount": 5,
+        "canonicalTxCount": 5,
+    }
 
 
 ML_SAMPLE_DIR = FIXTURES_DIR / "ml_sample"
