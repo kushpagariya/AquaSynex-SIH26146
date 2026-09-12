@@ -1,0 +1,39 @@
+# Git & IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Virtual Environments
+.venv/
+backend/.venv/
+*/.venv/
+
+# Frontend dependencies and build artifacts
+frontend/node_modules/
+frontend/dist/
+*/node_modules/
+*/dist/
+
+# Python caches and bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+catboost_info/
+
+# DuckDB runtime databases and locks
+*.db
+*.db.wal
+*.db.tmp
+data/*.db
+data/*.db.wal
+data/*.db.tmp
+data/test_*.db
+data/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*
+
+# Test & scratch temporary files
+scratch/
+.system_generated/
+*.log
