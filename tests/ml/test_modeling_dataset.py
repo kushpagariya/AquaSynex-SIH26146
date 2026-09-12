@@ -33,6 +33,12 @@ class TestModelingDataset(unittest.TestCase):
         cls.canonical_tx_path = "data/processed/canonical/canonical_transactions.parquet"
         cls.manifest_path = "data/processed/modeling/feature_manifest.yaml"
 
+        if not os.path.exists(cls.parquet_path) or not os.path.exists(cls.canonical_tx_path) or not os.path.exists(cls.manifest_path):
+            raise unittest.SkipTest(
+                f"Generated modeling dataset '{cls.parquet_path}' or dependency not present on disk (gitignored artifact). "
+                "Skipping offline dataset validation."
+            )
+
         cls.con = duckdb.connect()
         cls.df = cls.con.execute(f"SELECT * FROM read_parquet('{cls.parquet_path}')").df()
         cls.df_canon = cls.con.execute(f"SELECT transaction_id, timestamp_epoch_sec FROM read_parquet('{cls.canonical_tx_path}')").df()
@@ -42,7 +48,8 @@ class TestModelingDataset(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.con.close()
+        if hasattr(cls, "con") and cls.con is not None:
+            cls.con.close()
 
     def test_expected_row_and_column_counts(self):
         """Verify dataset dimensions: 10,000 transactions and 56 columns."""
