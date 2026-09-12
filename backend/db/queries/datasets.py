@@ -1,4 +1,7 @@
-"""DuckDB queries for datasets table."""
+"""DuckDB queries for datasets table.
+
+Authoritative reference: docs/backend/backend-architecture.md
+"""
 
 from datetime import datetime, timezone
 import json
@@ -90,6 +93,9 @@ def get_dataset_by_id(conn: duckdb.DuckDBPyConnection, dataset_id: str) -> Dict[
             except Exception:
                 pass
 
+    if res.get("available_fields") is None:
+        res["available_fields"] = []
+
     return res
 
 
@@ -136,6 +142,8 @@ def list_datasets(
                 item["validation_summary"] = json.loads(item["validation_summary"])
             except Exception:
                 pass
+        if item.get("available_fields") is None:
+            item["available_fields"] = []
         items.append(item)
 
     pagination_meta = build_pagination_meta(page, page_size, total_items)
@@ -191,6 +199,7 @@ def delete_dataset(conn: duckdb.DuckDBPyConnection, dataset_id: str) -> bool:
     # Cascading deletes
     conn.execute("DELETE FROM ml_results WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM analysis_runs WHERE dataset_id = ?", [dataset_id])
+    conn.execute("DELETE FROM network_events WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM transaction_inputs WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
     conn.execute("DELETE FROM transactions WHERE dataset_id = ?", [dataset_id])

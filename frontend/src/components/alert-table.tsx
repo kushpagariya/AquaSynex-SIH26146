@@ -40,7 +40,7 @@ export function AlertTable({
           {alerts.map((a) => (
             <tr
               key={a.id}
-              onClick={() => navigate(`/investigation/${a.entityId}`)}
+              onClick={() => navigate(`/investigation/${a.entityId}?entityType=${a.entityType}`)}
               className="group cursor-pointer border-b border-line-soft transition-colors last:border-0 hover:bg-panel-2"
             >
               <td className="px-4 py-3">

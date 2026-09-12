@@ -1,4 +1,7 @@
-"""Dataset management service for upload, validation, parsing, and deletion."""
+"""Dataset management service for upload, validation, parsing, and deletion.
+
+Authoritative reference: docs/backend/backend-architecture.md
+"""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,6 +10,7 @@ from typing import Any, BinaryIO, Dict, List, Optional, Tuple
 import uuid
 import duckdb
 from backend.config import settings
+from backend.db.connection import get_db_lock
 from backend.db.queries import datasets as dataset_queries
 from backend.utils.converters import btc_str_to_satoshi, to_utc_datetime
 from backend.utils.errors import (
@@ -112,26 +116,27 @@ class DatasetService:
         )
 
         # Ingest file into canonical tables
-        try:
-            self._ingest_file(dataset_id, dest_path, format_str)
-        except Exception as exc:
-            logger.error(f"Ingestion failed for dataset {dataset_id}: {exc}")
-            # Rollback partially ingested rows for this dataset
+        with get_db_lock():
             try:
-                self.conn.execute("DELETE FROM transaction_inputs WHERE dataset_id = ?", [dataset_id])
-                self.conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
-                self.conn.execute("DELETE FROM transactions WHERE dataset_id = ?", [dataset_id])
-                self.conn.execute("DELETE FROM addresses WHERE dataset_id = ?", [dataset_id])
-            except Exception as rollback_exc:
-                logger.warning(f"Failed to rollback partial ingestion records: {rollback_exc}")
+                self._ingest_file(dataset_id, dest_path, format_str)
+            except Exception as exc:
+                logger.error(f"Ingestion failed for dataset {dataset_id}: {exc}")
+                try:
+                    self.conn.execute("DELETE FROM network_events WHERE dataset_id = ?", [dataset_id])
+                    self.conn.execute("DELETE FROM transaction_inputs WHERE dataset_id = ?", [dataset_id])
+                    self.conn.execute("DELETE FROM transaction_outputs WHERE dataset_id = ?", [dataset_id])
+                    self.conn.execute("DELETE FROM transactions WHERE dataset_id = ?", [dataset_id])
+                    self.conn.execute("DELETE FROM addresses WHERE dataset_id = ?", [dataset_id])
+                except Exception as rollback_exc:
+                    logger.warning(f"Failed to rollback partial ingestion records: {rollback_exc}")
 
-            dataset_queries.update_dataset_status(
-                conn=self.conn,
-                dataset_id=dataset_id,
-                status="error",
-                error_message=str(exc),
-            )
-            raise DatasetError(f"Failed to process dataset file: {exc}", details={"error": str(exc)}) from exc
+                dataset_queries.update_dataset(
+                    conn=self.conn,
+                    dataset_id=dataset_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                raise DatasetError(f"Failed to process dataset file: {exc}", details={"error": str(exc)}) from exc
 
         return dataset
 
@@ -162,7 +167,17 @@ class DatasetService:
         block_height_col = raw_cols_lower.get("block_height") or raw_cols_lower.get("block") or raw_cols_lower.get("height")
         in_addr_col = raw_cols_lower.get("input_address") or raw_cols_lower.get("sender") or raw_cols_lower.get("from_address")
         out_addr_col = raw_cols_lower.get("output_address") or raw_cols_lower.get("receiver") or raw_cols_lower.get("to_address")
+        nested_in_addr_col = raw_cols_lower.get("input_addresses")
+        nested_out_addr_col = raw_cols_lower.get("output_addresses")
+        nested_in_amt_col = raw_cols_lower.get("input_amounts")
+        nested_out_amt_col = raw_cols_lower.get("output_amounts")
         label_col = raw_cols_lower.get("label") or raw_cols_lower.get("class") or raw_cols_lower.get("is_illicit") or raw_cols_lower.get("category")
+        src_ip_col = raw_cols_lower.get("src_ip") or raw_cols_lower.get("source_ip")
+        src_port_col = raw_cols_lower.get("src_port") or raw_cols_lower.get("source_port")
+        dst_ip_col = raw_cols_lower.get("dst_ip") or raw_cols_lower.get("dest_ip") or raw_cols_lower.get("destination_ip")
+        dst_port_col = raw_cols_lower.get("dst_port") or raw_cols_lower.get("dest_port") or raw_cols_lower.get("destination_port")
+        country_col = raw_cols_lower.get("country") or raw_cols_lower.get("net_country")
+        asn_col = raw_cols_lower.get("asn") or raw_cols_lower.get("net_asn")
 
         if not tx_col:
             # Fallback: if no tx column, generate row hash or UUID surrogate
@@ -205,6 +220,28 @@ class DatasetService:
         else:
             val_expr = "NULL"
 
+        if nested_in_amt_col:
+            in_amt_ident = escape_sql_identifier(nested_in_amt_col)
+            in_count_expr = f"len(from_json(CAST({in_amt_ident} AS VARCHAR), '[\"BIGINT\"]'))"
+            tot_in_expr = f"CAST(list_sum(from_json(CAST({in_amt_ident} AS VARCHAR), '[\"BIGINT\"]')) AS BIGINT)"
+        elif val_col:
+            in_count_expr = "1"
+            tot_in_expr = val_expr
+        else:
+            in_count_expr = "1"
+            tot_in_expr = "NULL"
+
+        if nested_out_amt_col:
+            out_amt_ident = escape_sql_identifier(nested_out_amt_col)
+            out_count_expr = f"len(from_json(CAST({out_amt_ident} AS VARCHAR), '[\"BIGINT\"]'))"
+            tot_out_expr = f"CAST(list_sum(from_json(CAST({out_amt_ident} AS VARCHAR), '[\"BIGINT\"]')) AS BIGINT)"
+        elif val_col:
+            out_count_expr = "1"
+            tot_out_expr = val_expr
+        else:
+            out_count_expr = "1"
+            tot_out_expr = "NULL"
+
         if fee_col:
             fee_col_ident = escape_sql_identifier(fee_col)
             fee_col_lit = escape_sql_literal(fee_col)
@@ -245,17 +282,18 @@ class DatasetService:
         insert_tx_sql = f"""
         INSERT OR REPLACE INTO transactions (
             transaction_id, dataset_id, block_height, timestamp,
-            input_count, output_count, total_output_value_satoshi,
-            fee_satoshi, label, ingested_at
+            input_count, output_count, total_input_value_satoshi,
+            total_output_value_satoshi, fee_satoshi, label, ingested_at
         )
         SELECT 
             {tx_col_expr} AS transaction_id,
             '{dataset_id}' AS dataset_id,
             {block_expr} AS block_height,
             {timestamp_expr} AS timestamp,
-            1 AS input_count,
-            1 AS output_count,
-            {val_expr} AS total_output_value_satoshi,
+            {in_count_expr} AS input_count,
+            {out_count_expr} AS output_count,
+            {tot_in_expr} AS total_input_value_satoshi,
+            {tot_out_expr} AS total_output_value_satoshi,
             {fee_expr} AS fee_satoshi,
             {label_expr} AS label,
             current_timestamp AS ingested_at
@@ -274,14 +312,42 @@ class DatasetService:
         available_fields = ["transactionId"]
         if time_col:
             available_fields.append("timestamp")
-        if val_col:
+        if val_col or nested_out_amt_col:
             available_fields.append("totalOutputValueBtc")
         if fee_col:
             available_fields.append("feeBtc")
         if label_col:
             available_fields.append("label")
 
-        if out_addr_col:
+        if nested_out_addr_col and nested_out_amt_col:
+            nested_out_addr_ident = escape_sql_identifier(nested_out_addr_col)
+            nested_out_amt_ident = escape_sql_identifier(nested_out_amt_col)
+            available_fields.append("outputAddress")
+            insert_out_sql = f"""
+            WITH expanded AS (
+                SELECT 
+                    {tx_col_expr} AS txid,
+                    unnest(from_json(replace(CAST({nested_out_addr_ident} AS VARCHAR), '''', '"'), '["VARCHAR"]')) AS output_address,
+                    unnest(from_json(CAST({nested_out_amt_ident} AS VARCHAR), '["BIGINT"]')) AS output_value_satoshi
+                FROM {temp_view}
+                WHERE {tx_col_expr} IS NOT NULL AND {nested_out_addr_ident} IS NOT NULL
+            )
+            INSERT OR REPLACE INTO transaction_outputs (
+                output_id, transaction_id, dataset_id, output_index,
+                output_address, output_value_satoshi, is_spent
+            )
+            SELECT 
+                txid || ':' || CAST(row_number() OVER (PARTITION BY txid) - 1 AS VARCHAR) AS output_id,
+                txid AS transaction_id,
+                '{dataset_id}' AS dataset_id,
+                CAST(row_number() OVER (PARTITION BY txid) - 1 AS INTEGER) AS output_index,
+                output_address,
+                output_value_satoshi,
+                FALSE AS is_spent
+            FROM expanded
+            """
+            self.conn.execute(insert_out_sql)
+        elif out_addr_col:
             out_addr_ident = escape_sql_identifier(out_addr_col)
             available_fields.append("outputAddress")
             insert_out_sql = f"""
@@ -302,7 +368,34 @@ class DatasetService:
             """
             self.conn.execute(insert_out_sql)
 
-        if in_addr_col:
+        if nested_in_addr_col and nested_in_amt_col:
+            nested_in_addr_ident = escape_sql_identifier(nested_in_addr_col)
+            nested_in_amt_ident = escape_sql_identifier(nested_in_amt_col)
+            available_fields.append("inputAddress")
+            insert_in_sql = f"""
+            WITH expanded AS (
+                SELECT 
+                    {tx_col_expr} AS txid,
+                    unnest(from_json(replace(CAST({nested_in_addr_ident} AS VARCHAR), '''', '"'), '["VARCHAR"]')) AS input_address,
+                    unnest(from_json(CAST({nested_in_amt_ident} AS VARCHAR), '["BIGINT"]')) AS input_value_satoshi
+                FROM {temp_view}
+                WHERE {tx_col_expr} IS NOT NULL AND {nested_in_addr_ident} IS NOT NULL
+            )
+            INSERT OR REPLACE INTO transaction_inputs (
+                input_id, transaction_id, dataset_id, input_index,
+                input_address, input_value_satoshi
+            )
+            SELECT 
+                txid || ':' || CAST(row_number() OVER (PARTITION BY txid) - 1 AS VARCHAR) AS input_id,
+                txid AS transaction_id,
+                '{dataset_id}' AS dataset_id,
+                CAST(row_number() OVER (PARTITION BY txid) - 1 AS INTEGER) AS input_index,
+                input_address,
+                input_value_satoshi
+            FROM expanded
+            """
+            self.conn.execute(insert_in_sql)
+        elif in_addr_col:
             in_addr_ident = escape_sql_identifier(in_addr_col)
             available_fields.append("inputAddress")
             insert_in_sql = f"""
@@ -321,6 +414,37 @@ class DatasetService:
             WHERE {in_addr_ident} IS NOT NULL
             """
             self.conn.execute(insert_in_sql)
+
+        if src_ip_col or dst_ip_col or src_port_col or dst_port_col or country_col or asn_col:
+            src_ip_expr = f'CAST({escape_sql_identifier(src_ip_col)} AS VARCHAR)' if src_ip_col else "NULL"
+            src_port_expr = f'TRY_CAST({escape_sql_identifier(src_port_col)} AS INTEGER)' if src_port_col else "NULL"
+            dst_ip_expr = f'CAST({escape_sql_identifier(dst_ip_col)} AS VARCHAR)' if dst_ip_col else "NULL"
+            dst_port_expr = f'TRY_CAST({escape_sql_identifier(dst_port_col)} AS INTEGER)' if dst_port_col else "NULL"
+            country_expr = f'UPPER(TRIM(CAST({escape_sql_identifier(country_col)} AS VARCHAR)))' if country_col else "NULL"
+            asn_expr = f'TRY_CAST({escape_sql_identifier(asn_col)} AS BIGINT)' if asn_col else "NULL"
+
+            insert_net_sql = f"""
+            INSERT OR REPLACE INTO network_events (
+                event_id, transaction_id, dataset_id, timestamp,
+                timestamp_epoch_sec, src_ip, src_port, dst_ip, dst_port, country, asn
+            )
+            SELECT 
+                'EVT_' || '{dataset_id}' || '_' || {tx_col_expr} || '_' || ROW_NUMBER() OVER () AS event_id,
+                {tx_col_expr} AS transaction_id,
+                '{dataset_id}' AS dataset_id,
+                {timestamp_expr} AS timestamp,
+                CASE WHEN {timestamp_expr} IS NOT NULL THEN epoch({timestamp_expr}) ELSE 0 END AS timestamp_epoch_sec,
+                {src_ip_expr} AS src_ip,
+                {src_port_expr} AS src_port,
+                {dst_ip_expr} AS dst_ip,
+                {dst_port_expr} AS dst_port,
+                {country_expr} AS country,
+                {asn_expr} AS asn
+            FROM {temp_view}
+            WHERE {tx_col_expr} IS NOT NULL
+            """
+            self.conn.execute(insert_net_sql)
+            available_fields.append("networkEvents")
 
         # Populate derived addresses table
         populate_addr_sql = f"""
@@ -354,14 +478,20 @@ class DatasetService:
         # Drop temporary view
         self.conn.execute(f"DROP VIEW IF EXISTS {temp_view}")
 
+        addr_count_res = self.conn.execute("SELECT COUNT(*) FROM addresses WHERE dataset_id = ?", [dataset_id]).fetchone()
+        address_count = addr_count_res[0] if addr_count_res else 0
+
         # Update dataset status to 'ready'
         validation_summary = {
             "rejectedRows": max(0, row_count - canonical_tx_count),
             "warnedRows": 0,
+            "addressCount": address_count,
+            "unique_addresses": address_count,
             "fieldCoverage": {f: 1.0 for f in available_fields},
             "analysisCapability": {
-                "graphAnalysis": bool(out_addr_col or in_addr_col),
+                "graphAnalysis": bool(out_addr_col or in_addr_col or nested_out_addr_col or nested_in_addr_col),
                 "temporalAnalysis": bool(time_col),
+                "networkAnalysis": bool(src_ip_col or dst_ip_col or src_port_col or dst_port_col or country_col or asn_col),
             },
         }
 
@@ -374,7 +504,7 @@ class DatasetService:
             available_fields=available_fields,
             validation_summary=validation_summary,
         )
-        logger.info(f"Dataset {dataset_id} successfully ingested with {canonical_tx_count} transactions.")
+        logger.info(f"Dataset {dataset_id} successfully ingested with {canonical_tx_count} transactions and {address_count} addresses.")
 
     def get_dataset(self, dataset_id: str) -> Dict[str, Any]:
         """Retrieve dataset details."""

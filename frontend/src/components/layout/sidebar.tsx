@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { NavLink } from "react-router-dom"
 import {
   LayoutDashboard,
@@ -7,6 +8,7 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getHealth } from "@/api"
 
 const nav = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -16,6 +18,32 @@ const nav = [
 ]
 
 export function Sidebar() {
+  const [healthStatus, setHealthStatus] = useState<"online" | "offline" | "checking">("checking")
+
+  useEffect(() => {
+    let mounted = true
+
+    function check() {
+      getHealth()
+        .then((res) => {
+          if (!mounted) return
+          setHealthStatus(res.status === "healthy" ? "online" : "offline")
+        })
+        .catch(() => {
+          if (!mounted) return
+          setHealthStatus("offline")
+        })
+    }
+
+    check()
+    const interval = setInterval(check, 15000)
+
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [])
+
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -64,11 +92,35 @@ export function Sidebar() {
       <div className="mx-3 mb-4 mt-2 border-t border-line pt-4">
         <div className="flex items-center gap-2 rounded-md bg-panel-2 px-3 py-2">
           <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-risk-low/60" />
-            <span className="relative inline-flex size-2 rounded-full bg-risk-low" />
+            {healthStatus === "online" ? (
+              <>
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-risk-low/60" />
+                <span className="relative inline-flex size-2 rounded-full bg-risk-low" />
+              </>
+            ) : healthStatus === "checking" ? (
+              <span className="relative inline-flex size-2 rounded-full bg-risk-medium" />
+            ) : (
+              <span className="relative inline-flex size-2 rounded-full bg-risk-critical" />
+            )}
           </span>
           <span className="text-xs text-fg-muted">
-            System: <span className="font-medium text-fg">Offline</span>
+            System:{" "}
+            <span
+              className={cn(
+                "font-medium",
+                healthStatus === "online"
+                  ? "text-risk-low"
+                  : healthStatus === "checking"
+                    ? "text-risk-medium"
+                    : "text-risk-critical",
+              )}
+            >
+              {healthStatus === "online"
+                ? "Online"
+                : healthStatus === "checking"
+                  ? "Checking…"
+                  : "Offline"}
+            </span>
           </span>
         </div>
       </div>

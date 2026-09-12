@@ -103,12 +103,22 @@ export interface TransactionOutputDetail {
   scriptType?: string
 }
 
+export interface NetworkEventSchema {
+  srcIp?: string | null
+  srcPort?: number | null
+  dstIp?: string | null
+  dstPort?: number | null
+  country?: string | null
+  asn?: number | null
+}
+
 export interface TransactionDetail extends TransactionSummary {
   blockHash?: string
   transactionSizeBytes?: number
   label?: string
   inputs: TransactionInputDetail[]
   outputs: TransactionOutputDetail[]
+  networkEvents?: NetworkEventSchema[]
   mlResult?: MLResultSummary
 }
 
@@ -226,15 +236,22 @@ export interface MLResultDetail extends MLResultSummary {
 
 export interface ModelInfo {
   modelId: string
-  version: string
+  modelVersion?: string
+  version?: string
   algorithm: string
-  description: string
-  features: string[]
-  isDefault: boolean
+  modelType?: string
+  description?: string
+  features?: string[]
+  isDefault?: boolean
+  isExecutable?: boolean
+  trainingCompletedAt?: string
 }
 
 export interface HealthResponse {
   status: string
   version: string
-  timestamp: string
+  databaseStatus?: string
+  modelsAvailable?: string[]
+  uptime?: number
+  timestamp?: string
 }

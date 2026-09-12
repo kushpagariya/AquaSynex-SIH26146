@@ -1,0 +1,147 @@
+{
+  "phase": "2.5B",
+  "timestamp": "2026-09-12T02:55:00Z",
+  "feature_count": 46,
+  "processed_feature_dimension": 71,
+  "split_summary": {
+    "train_records": 7000,
+    "val_records": 1500,
+    "test_records": 1500,
+    "test_set_touched": false,
+    "test_status": "STRICTLY UNTOUCHED & FROZEN"
+  },
+  "models_evaluated": [
+    {
+      "model_name": "Baseline (Logistic Regression)",
+      "training_time_sec": 0.116,
+      "hyperparameters": {
+        "max_iter": 1000,
+        "class_weight": "balanced",
+        "random_state": 42
+      },
+      "validation_metrics": {
+        "roc_auc": 0.6122,
+        "pr_auc": 0.6598,
+        "accuracy": 0.4927,
+        "precision": 0.427,
+        "recall": 0.5965,
+        "f1_score": 0.4977,
+        "confusion_matrix": {
+          "tn": 362,
+          "fp": 506,
+          "fn": 255,
+          "tp": 377
+        }
+      },
+      "training_metrics": {
+        "train_roc_auc": 0.5509,
+        "train_f1": 0.4895
+      },
+      "overfitting_audit": {
+        "roc_auc_gap": -0.0613,
+        "f1_score_gap": -0.0082,
+        "overfitting_risk": "Low"
+      }
+    },
+    {
+      "model_name": "Random Forest",
+      "training_time_sec": 0.199,
+      "hyperparameters": {
+        "n_estimators": 100,
+        "max_depth": 12,
+        "min_samples_leaf": 3,
+        "random_state": 42
+      },
+      "validation_metrics": {
+        "roc_auc": 0.9999,
+        "pr_auc": 0.9998,
+        "accuracy": 0.9953,
+        "precision": 1.0,
+        "recall": 0.9889,
+        "f1_score": 0.9944,
+        "confusion_matrix": {
+          "tn": 868,
+          "fp": 0,
+          "fn": 7,
+          "tp": 625
+        }
+      },
+      "training_metrics": {
+        "train_roc_auc": 1.0,
+        "train_f1": 0.9958
+      },
+      "overfitting_audit": {
+        "roc_auc_gap": 0.0001,
+        "f1_score_gap": 0.0014,
+        "overfitting_risk": "Low"
+      }
+    },
+    {
+      "model_name": "XGBoost",
+      "training_time_sec": 1.921,
+      "hyperparameters": {
+        "n_estimators": 100,
+        "max_depth": 6,
+        "learning_rate": 0.1,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8
+      },
+      "validation_metrics": {
+        "roc_auc": 1.0,
+        "pr_auc": 1.0,
+        "accuracy": 0.9993,
+        "precision": 1.0,
+        "recall": 0.9984,
+        "f1_score": 0.9992,
+        "confusion_matrix": {
+          "tn": 868,
+          "fp": 0,
+          "fn": 1,
+          "tp": 631
+        }
+      },
+      "training_metrics": {
+        "train_roc_auc": 1.0,
+        "train_f1": 0.9997
+      },
+      "overfitting_audit": {
+        "roc_auc_gap": 0.0,
+        "f1_score_gap": 0.0005,
+        "overfitting_risk": "Low"
+      }
+    },
+    {
+      "model_name": "CatBoost",
+      "training_time_sec": 0.638,
+      "hyperparameters": {
+        "iterations": 100,
+        "depth": 6,
+        "learning_rate": 0.1,
+        "random_seed": 42
+      },
+      "validation_metrics": {
+        "roc_auc": 1.0,
+        "pr_auc": 1.0,
+        "accuracy": 0.9993,
+        "precision": 1.0,
+        "recall": 0.9984,
+        "f1_score": 0.9992,
+        "confusion_matrix": {
+          "tn": 868,
+          "fp": 0,
+          "fn": 1,
+          "tp": 631
+        }
+      },
+      "training_metrics": {
+        "train_roc_auc": 1.0,
+        "train_f1": 0.9995
+      },
+      "overfitting_audit": {
+        "roc_auc_gap": 0.0,
+        "f1_score_gap": 0.0003,
+        "overfitting_risk": "Low"
+      }
+    }
+  ]
+}

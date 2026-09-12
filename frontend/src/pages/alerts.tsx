@@ -17,7 +17,7 @@ const statuses: (AlertStatus | "all")[] = [
   "resolved",
   "dismissed",
 ]
-const entityTypes: (EntityType | "all")[] = ["all", "wallet", "mixer", "exchange", "ip"]
+const entityTypes: (EntityType | "all")[] = ["all", "transaction", "wallet", "mixer", "exchange", "ip"]
 
 type SortKey = "risk" | "time"
 

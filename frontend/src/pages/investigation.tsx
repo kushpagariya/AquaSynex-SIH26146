@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import {
   ShieldAlert,
   ListTree,
@@ -19,7 +19,7 @@ import {
   SeverityBadge,
 } from "@/components/ui/badges"
 import { MonoId } from "@/components/ui/mono-id"
-import { LoadingState, ErrorState } from "@/components/ui/states"
+import { LoadingState, ErrorState, EmptyState } from "@/components/ui/states"
 import { RiskFactors } from "@/components/investigation/risk-factors"
 import {
   EntityInfo,
@@ -32,12 +32,14 @@ import {
   type GraphSelection,
 } from "@/components/investigation/graph-viewer"
 import { TransactionTable } from "@/components/transaction-table"
-import { getInvestigation } from "@/data/service"
-import type { Investigation } from "@/data/types"
+import { getInvestigation, getAlerts } from "@/data/service"
+import type { Investigation, EntityType } from "@/data/types"
 import { severityColorVar } from "@/components/ui/badges"
 
 export function InvestigationPage() {
   const { entityId } = useParams<{ entityId: string }>()
+  const [searchParams] = useSearchParams()
+  const entityTypeParam = searchParams.get("entityType") || searchParams.get("type") || undefined
   const navigate = useNavigate()
   const [data, setData] = useState<Investigation | null>(null)
   const [notFound, setNotFound] = useState(false)
@@ -45,12 +47,29 @@ export function InvestigationPage() {
   const [selection, setSelection] = useState<GraphSelection | null>(null)
 
   useEffect(() => {
-    if (!entityId) return
+    if (!entityId) {
+      setData(null)
+      setNotFound(false)
+      setErrorMsg(null)
+      setSelection(null)
+      getAlerts()
+        .then((alerts) => {
+          if (alerts && alerts.length > 0) {
+            navigate(`/investigation/${alerts[0].entityId}?entityType=${alerts[0].entityType}`, {
+              replace: true,
+            })
+          }
+        })
+        .catch(() => {
+          // Stay in clean empty state
+        })
+      return
+    }
     setData(null)
     setNotFound(false)
     setErrorMsg(null)
     setSelection(null)
-    getInvestigation(entityId)
+    getInvestigation(entityId, entityTypeParam)
       .then((res) => {
         if (res) setData(res)
         else setNotFound(true)
@@ -58,7 +77,7 @@ export function InvestigationPage() {
       .catch((err) => {
         setErrorMsg(err instanceof Error ? err.message : "Failed to load investigation")
       })
-  }, [entityId])
+  }, [entityId, entityTypeParam, navigate])
 
   return (
     <AppLayout title="Investigation">
@@ -71,6 +90,11 @@ export function InvestigationPage() {
         <ErrorState
           title="Entity not found"
           description="This entity is not present in the loaded dataset."
+        />
+      ) : !entityId ? (
+        <EmptyState
+          title="No entity selected for investigation"
+          description="Select a flagged entity or address from the Dashboard or Alerts view, or search for a Bitcoin address above."
         />
       ) : !data ? (
         <LoadingState label="Building investigation" />
@@ -149,7 +173,7 @@ export function InvestigationPage() {
                 <NodeDetails
                   selection={selection}
                   onClose={() => setSelection(null)}
-                  onOpen={(id) => navigate(`/investigation/${id}`)}
+                  onOpen={(id, type) => navigate(`/investigation/${id}?entityType=${type}`)}
                 />
               ) : null}
             </div>
@@ -190,7 +214,7 @@ export function InvestigationPage() {
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => navigate(`/investigation/${c.id}`)}
+                  onClick={() => navigate(`/investigation/${c.id}?entityType=${c.type}`)}
                   className="flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-panel-2"
                 >
                   <div className="flex items-center gap-2">
@@ -267,7 +291,7 @@ function NodeDetails({
 }: {
   selection: GraphSelection
   onClose: () => void
-  onOpen: (id: string) => void
+  onOpen: (id: string, type: EntityType) => void
 }) {
   const isEntity = selection.type !== "transaction"
   return (
@@ -297,19 +321,13 @@ function NodeDetails({
         {selection.neighbors} direct connection
         {selection.neighbors === 1 ? "" : "s"}
       </p>
-      {isEntity ? (
-        <button
-          type="button"
-          onClick={() => onOpen(selection.id)}
-          className="mt-3 w-full rounded border border-accent/40 bg-accent-soft py-1.5 text-xs font-medium text-accent hover:bg-accent/10"
-        >
-          Investigate this entity →
-        </button>
-      ) : (
-        <p className="mt-3 text-xs text-fg-subtle">
-          Transaction node — inspect via the transactions table below.
-        </p>
-      )}
+      <button
+        type="button"
+        onClick={() => onOpen(selection.id, selection.type)}
+        className="mt-3 w-full rounded border border-accent/40 bg-accent-soft py-1.5 text-xs font-medium text-accent hover:bg-accent/10"
+      >
+        {isEntity ? "Investigate this entity →" : "Investigate transaction →"}
+      </button>
     </div>
   )
 }

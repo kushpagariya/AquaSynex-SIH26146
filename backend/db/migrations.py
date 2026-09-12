@@ -145,6 +145,25 @@ MIGRATION_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_ml_results_analysis ON ml_results(analysis_id);",
     "CREATE INDEX IF NOT EXISTS idx_ml_results_entity ON ml_results(entity_id, dataset_id);",
     "CREATE INDEX IF NOT EXISTS idx_ml_results_risk ON ml_results(analysis_id, risk_score);",
+
+    # 8. Network events table
+    """
+    CREATE TABLE IF NOT EXISTS network_events (
+        event_id            VARCHAR PRIMARY KEY,
+        transaction_id      VARCHAR NOT NULL,
+        dataset_id          VARCHAR NOT NULL,
+        timestamp           TIMESTAMPTZ,
+        timestamp_epoch_sec BIGINT,
+        src_ip              VARCHAR,
+        src_port            INTEGER,
+        dst_ip              VARCHAR,
+        dst_port            INTEGER,
+        country             VARCHAR,
+        asn                 BIGINT
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_network_events_dataset ON network_events(dataset_id);",
+    "CREATE INDEX IF NOT EXISTS idx_network_events_tx ON network_events(transaction_id);",
 ]
 
 
