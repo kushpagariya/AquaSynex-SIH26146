@@ -7,6 +7,10 @@ import {
   ShieldAlert,
   Waves,
   CircleCheck,
+  GitFork,
+  Globe,
+  Layers,
+  Cpu,
 } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel"
@@ -63,20 +67,74 @@ export function DashboardPage() {
               </button>
             </div>
           ) : null}
+
+          {/* Forensic Quick Launch Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-panel border border-line rounded">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-terminal-cyan uppercase font-bold tracking-wider">
+                FORENSIC WORKSPACES:
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => navigate("/transactions")}
+                className="px-2.5 py-1 text-xs font-mono bg-panel-2 border border-line hover:border-terminal-cyan rounded flex items-center gap-1.5 text-foreground transition-colors"
+              >
+                <Activity className="size-3 text-terminal-cyan" />
+                Transactions Ledger
+              </button>
+              <button
+                onClick={() => navigate("/entities")}
+                className="px-2.5 py-1 text-xs font-mono bg-panel-2 border border-line hover:border-terminal-cyan rounded flex items-center gap-1.5 text-foreground transition-colors"
+              >
+                <Users className="size-3 text-terminal-cyan" />
+                Inferred Clusters
+              </button>
+              <button
+                onClick={() => navigate("/graph")}
+                className="px-2.5 py-1 text-xs font-mono bg-panel-2 border border-line hover:border-terminal-cyan rounded flex items-center gap-1.5 text-foreground transition-colors"
+              >
+                <GitFork className="size-3 text-terminal-cyan" />
+                Graph Explorer
+              </button>
+              <button
+                onClick={() => navigate("/network")}
+                className="px-2.5 py-1 text-xs font-mono bg-panel-2 border border-line hover:border-terminal-cyan rounded flex items-center gap-1.5 text-foreground transition-colors"
+              >
+                <Globe className="size-3 text-terminal-cyan" />
+                Network Telemetry
+              </button>
+              <button
+                onClick={() => navigate("/behaviors")}
+                className="px-2.5 py-1 text-xs font-mono bg-panel-2 border border-line hover:border-terminal-cyan rounded flex items-center gap-1.5 text-foreground transition-colors"
+              >
+                <Layers className="size-3 text-purple-400" />
+                Typologies (11)
+              </button>
+              <button
+                onClick={() => navigate("/model")}
+                className="px-2.5 py-1 text-xs font-mono bg-panel-2 border border-line hover:border-terminal-cyan rounded flex items-center gap-1.5 text-foreground transition-colors"
+              >
+                <Cpu className="size-3 text-terminal-cyan" />
+                Model Insights
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Transactions"
               value={stats.totalTransactions}
               delta={stats.deltas.transactions}
               icon={Activity}
-              onClick={() => navigate("/dataset")}
+              onClick={() => navigate("/transactions")}
             />
             <StatCard
               label="Entities"
               value={stats.totalEntities}
               delta={stats.deltas.entities}
               icon={Users}
-              onClick={() => navigate("/investigation")}
+              onClick={() => navigate("/entities")}
             />
             <StatCard
               label="Active Alerts"
@@ -164,15 +222,30 @@ export function DashboardPage() {
                   state={stats.processingStatus?.graphBuild ? "Completed" : stats.totalTransactions > 0 ? "In progress" : "Idle"}
                   done={stats.processingStatus?.graphBuild}
                 />
-                <div className="rounded-md border border-line bg-panel-2 p-3">
-                  <p className="text-xs text-fg-subtle">Last processed</p>
+                <div className="rounded-md border border-line bg-panel-2 p-3 font-mono text-xs">
+                  <p className="text-[11px] text-fg-subtle">Last processed</p>
                   <p className="mt-0.5 font-mono-id text-sm text-fg">
                     {stats.lastProcessed ? formatDateTime(stats.lastProcessed) : "No dataset processed yet"}
                   </p>
-                  <p className="mt-2 text-xs text-fg-subtle">Anomalies detected</p>
-                  <p className="mt-0.5 font-mono-id text-sm text-risk-high">
-                    {stats.anomaliesDetected}
-                  </p>
+                  <div className="mt-2.5 pt-2 border-t border-line/60 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-fg-subtle uppercase">Anomalies Detected</p>
+                      <p className="mt-0.5 text-sm font-bold text-risk-high">
+                        {stats.anomaliesDetected}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-fg-subtle uppercase">Suspicious Ratio</p>
+                      <p className="mt-0.5 text-sm font-bold text-terminal-cyan">
+                        {stats.totalTransactions > 0
+                          ? `${((stats.anomaliesDetected / stats.totalTransactions) * 100).toFixed(1)}%`
+                          : "0.0%"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[10px] text-fg-subtle">
+                    Dual Model: XGBoost (τ=0.32) + CatBoost (11-Class)
+                  </div>
                 </div>
               </PanelBody>
             </Panel>

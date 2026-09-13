@@ -3,18 +3,63 @@ import { NavLink } from "react-router-dom"
 import {
   LayoutDashboard,
   Database,
+  ArrowLeftRight,
+  Users,
+  Share2,
+  Network,
   Bell,
+  Activity,
   Fingerprint,
+  BrainCircuit,
   ShieldAlert,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getHealth } from "@/api"
 
-const nav = [
-  { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { to: "/dataset", label: "Dataset", icon: Database },
-  { to: "/alerts", label: "Alerts", icon: Bell },
-  { to: "/investigation", label: "Investigate", icon: Fingerprint },
+interface NavSection {
+  title: string
+  items: {
+    to: string
+    label: string
+    icon: React.ComponentType<{ className?: string }>
+  }[]
+}
+
+const navSections: NavSection[] = [
+  {
+    title: "OVERVIEW",
+    items: [{ to: "/dashboard", label: "Overview", icon: LayoutDashboard }],
+  },
+  {
+    title: "DATA",
+    items: [
+      { to: "/dataset", label: "Dataset", icon: Database },
+      { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+    ],
+  },
+  {
+    title: "INTELLIGENCE",
+    items: [
+      { to: "/entities", label: "Entities", icon: Users },
+      { to: "/graph", label: "Graph Explorer", icon: Share2 },
+      { to: "/network", label: "Network Intelligence", icon: Network },
+    ],
+  },
+  {
+    title: "ALERTS & ANALYSIS",
+    items: [
+      { to: "/alerts", label: "Alerts", icon: Bell },
+      { to: "/behaviors", label: "Behavior Analytics", icon: Activity },
+    ],
+  },
+  {
+    title: "INVESTIGATION",
+    items: [{ to: "/investigation", label: "Investigate", icon: Fingerprint }],
+  },
+  {
+    title: "SYSTEM",
+    items: [{ to: "/model", label: "Model Insights", icon: BrainCircuit }],
+  },
 ]
 
 export function Sidebar() {
@@ -60,32 +105,41 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
-        {nav.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              cn(
-                "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-accent-soft text-accent"
-                  : "text-fg-muted hover:bg-panel-2 hover:text-fg",
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon
-                  className={cn(
-                    "size-4.5",
-                    isActive ? "text-accent" : "text-fg-subtle group-hover:text-fg",
+      <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-2">
+        {navSections.map((section) => (
+          <div key={section.title} className="space-y-1">
+            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-fg-subtle">
+              {section.title}
+            </p>
+            <div className="flex flex-col gap-0.5">
+              {section.items.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    cn(
+                      "group flex items-center gap-2.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      isActive
+                        ? "bg-accent-soft text-accent border border-accent/20"
+                        : "text-fg-muted hover:bg-panel-2 hover:text-fg",
+                    )
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Icon
+                        className={cn(
+                          "size-4 shrink-0",
+                          isActive ? "text-accent" : "text-fg-subtle group-hover:text-fg",
+                        )}
+                      />
+                      <span className="truncate">{label}</span>
+                    </>
                   )}
-                />
-                {label}
-              </>
-            )}
-          </NavLink>
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 

@@ -92,6 +92,9 @@ export interface Transaction {
   relatedEntityIds: string[]
   riskScore?: number
   severity?: Severity
+  behaviorType?: string
+  clusterId?: string
+  status?: string
 }
 
 export type TimelineKind =
@@ -209,3 +212,157 @@ export interface DatasetInfo {
   }
   error?: string
 }
+
+/** Canonical Inferred Behavioral Cluster emitted by pipeline */
+export interface InferredCluster {
+  clusterId: string
+  clusterSize: number
+  transactionCount: number
+  totalReceived: number
+  totalSent: number
+  balance: number
+  averageRisk: number
+  highestRisk: number
+  severity: Severity
+  dominantBehavior: string
+  status: "Active" | "Elevated Risk" | "Monitored"
+  associatedAddresses: string[]
+  firstSeen: string
+  lastSeen: string
+  leadAddress: string
+}
+
+export interface NetworkDistributionItem {
+  key: string
+  label: string
+  count: number
+  percentage: number
+  volumeBtc: number
+  riskCount: number
+}
+
+export interface NetworkIntelligenceData {
+  countries: NetworkDistributionItem[]
+  asns: NetworkDistributionItem[]
+  ports: {
+    standardPortCount: number
+    nonStandardPortCount: number
+    srcPorts: { port: number; count: number }[]
+    dstPorts: { port: number; count: number }[]
+  }
+  timeline: { time: string; count: number; suspicious: number }[]
+  suspiciousEvents: {
+    txid: string
+    ip: string
+    port: number
+    asn: string
+    asnOrg: string
+    country: string
+    riskScore: number
+    severity: Severity
+    timestamp: string
+    behaviorType?: string
+  }[]
+  topIps: { ip: string; country: string; asn: string; txCount: number; volumeBtc: number; maxRisk: number }[]
+  topAsns: { asn: string; asnOrg: string; country: string; txCount: number; volumeBtc: number }[]
+}
+
+export const BEHAVIOR_TYPOLOGIES = [
+  "normal",
+  "benign_high_volume",
+  "transaction_burst",
+  "rapid_multihop",
+  "peeling_chain",
+  "coordinated_activity",
+  "high_fan_in",
+  "high_fan_out",
+  "temporal_anomaly",
+  "mixing_like",
+  "amount_anomaly",
+] as const
+
+export type BehaviorTypology = (typeof BEHAVIOR_TYPOLOGIES)[number]
+
+export interface BehaviorAnalyticsItem {
+  key: BehaviorTypology
+  name: string
+  description: string
+  count: number
+  percentage: number
+  averageRisk: number
+  severityBreakdown: Record<Severity, number>
+  topTransactions: { txid: string; amount: number; timestamp: string; riskScore: number; severity: Severity }[]
+  topEntities: { id: string; label: string; address?: string; riskScore: number; severity: Severity }[]
+}
+
+export interface ModelOperatingPoint {
+  threshold: number
+  valRecall: number
+  valPrecision: number
+  valF1: number
+  testRecall: number
+  testPrecision: number
+  testF1: number
+}
+
+export interface FeatureGroupInfo {
+  name: string
+  count: number
+  description: string
+  features: string[]
+  subtypes?: string
+}
+
+export interface ModelInsightsData {
+  binaryModel: {
+    algorithm: string
+    version: string
+    releaseTag: string
+    operatingPoints: {
+      defaultPoint: ModelOperatingPoint
+      f1Optimal: ModelOperatingPoint
+      highPrecisionR95: ModelOperatingPoint
+    }
+    generalization: {
+      valRocAuc: number
+      testRocAuc: number
+      valPrAuc: number
+      testPrAuc: number
+    }
+  }
+  multiclassModel: {
+    algorithm: string
+    version: string
+    classesCount: number
+    classes: string[]
+    accuracy: number
+    macroF1: number
+  }
+  featureGroups: FeatureGroupInfo[]
+  topShapFeatures: {
+    rank: number
+    featureName: string
+    displayLabel: string
+    group: string
+    unit?: string
+    importance: number
+    direction: "increases_risk" | "decreases_risk" | "neutral"
+  }[]
+  scientificDisclaimer: string
+}
+
+export interface DatasetProfile {
+  totalTransactions: number
+  totalAddresses: number
+  totalEntities: number
+  timeRange: { from: string; to: string; span: string }
+  countryCount: number
+  asnCount: number
+  suspiciousPercentage: number
+  missingValues: number
+  duplicateIds: number
+  behaviorDistribution: { behavior: string; count: number; percentage: number }[]
+  graphCoverage: { nodeCount: number; edgeCount: number; isCovered: boolean }
+  scoringStatus: { scoredCount: number; totalCount: number; status: string }
+}
+

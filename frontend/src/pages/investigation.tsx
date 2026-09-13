@@ -10,6 +10,10 @@ import {
   FileSearch,
   Share2,
   X,
+  GitFork,
+  Users,
+  Activity,
+  Bell,
 } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel"
@@ -123,15 +127,73 @@ export function InvestigationPage() {
                     </div>
                   ) : null}
                   <p
-                    className="mt-2 text-xs font-medium uppercase tracking-wide"
+                    className="mt-2 text-xs font-medium uppercase tracking-wide flex items-center gap-2"
                     style={{
                       color: severityColorVar(data.entity.risk.severity),
                     }}
                   >
-                    {data.entity.risk.score} / 100 —{" "}
-                    {data.entity.risk.severity} risk
+                    <span>
+                      {data.entity.risk.score} / 100 — {data.entity.risk.severity} risk
+                    </span>
+                    <span className="font-mono text-[10px] text-fg-subtle lowercase">
+                      {data.entity.type !== "transaction"
+                        ? "(Aggregate ML Risk from Associated Transactions)"
+                        : "(Transaction-Level ML Prediction)"}
+                    </span>
                   </p>
                 </div>
+              </div>
+
+              {/* Investigation Quick Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/graph?search=${encodeURIComponent(data.entity.address || data.entity.id)}`,
+                    )
+                  }
+                  className="flex items-center gap-1.5 rounded border border-line bg-panel-2 px-3 py-1.5 text-xs font-mono text-foreground hover:border-terminal-cyan transition-colors"
+                >
+                  <GitFork className="size-3.5 text-terminal-cyan" />
+                  Graph Explorer
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/entities?search=${encodeURIComponent(data.entity.address || data.entity.id)}`,
+                    )
+                  }
+                  className="flex items-center gap-1.5 rounded border border-line bg-panel-2 px-3 py-1.5 text-xs font-mono text-foreground hover:border-terminal-cyan transition-colors"
+                >
+                  <Users className="size-3.5 text-terminal-cyan" />
+                  Inferred Cluster
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/transactions?search=${encodeURIComponent(data.entity.address || data.entity.id)}`,
+                    )
+                  }
+                  className="flex items-center gap-1.5 rounded border border-line bg-panel-2 px-3 py-1.5 text-xs font-mono text-foreground hover:border-terminal-cyan transition-colors"
+                >
+                  <Activity className="size-3.5 text-terminal-cyan" />
+                  Transactions
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/alerts?search=${encodeURIComponent(data.entity.address || data.entity.id)}`,
+                    )
+                  }
+                  className="flex items-center gap-1.5 rounded border border-line bg-panel-2 px-3 py-1.5 text-xs font-mono text-foreground hover:border-terminal-cyan transition-colors"
+                >
+                  <Bell className="size-3.5 text-risk-high" />
+                  Alerts
+                </button>
               </div>
             </PanelBody>
           </Panel>
