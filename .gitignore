@@ -180,3 +180,4 @@ $RECYCLE.BIN/
 .#*
 docker-compose.override.yml
 .vscode/
+own_docs/
