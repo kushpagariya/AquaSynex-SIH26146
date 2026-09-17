@@ -7,9 +7,7 @@ import {
   Filter,
   RefreshCw,
   Search,
-  SlidersHorizontal,
   ExternalLink,
-  ShieldAlert,
 } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelHeader } from "@/components/ui/panel"
@@ -20,7 +18,7 @@ import {
   getTransactionsDetailed,
   type FilteredTransactionsResponse,
 } from "@/data/service"
-import { BEHAVIOR_TYPOLOGIES, type BehaviorTypology, type Severity } from "@/data/types"
+import { BEHAVIOR_TYPOLOGIES, type Severity } from "@/data/types"
 import { formatBtc, formatDateTime, formatNumber, cn } from "@/lib/utils"
 
 const severities: (Severity | "all")[] = ["all", "critical", "high", "medium", "low"]
@@ -110,35 +108,31 @@ export function TransactionsPage() {
     setSearchParams({})
   }
 
-  // Extract distinct observed countries and ASNs from current result set
   const availableCountries = Array.from(
     new Set((data?.transactions || []).map((t) => t.network.countryCode).filter((c) => c && c !== "XX")),
-  )
-  const availableAsns = Array.from(
-    new Set((data?.transactions || []).map((t) => t.network.asn).filter((a) => a && a !== "—")),
   )
 
   return (
     <AppLayout title="Transactions">
-      <div className="space-y-5">
-        {/* Top Control Bar */}
+      <div className="space-y-6">
+        {/* Compact Institutional Filter Toolbar */}
         <Panel>
           <PanelHeader
-            title="Transaction Search & Criteria"
-            subtitle="Search by hash, inspect behavioral typology, or filter by network broadcast"
-            icon={<SlidersHorizontal className="size-4" />}
+            title="Transactions Query & Filter"
+            subtitle="Search by cryptographic hash or filter by behavioral typology and observed metadata"
+            icon={<Filter className="size-4" />}
             action={
               <button
                 type="button"
                 onClick={loadTransactions}
-                className="flex items-center gap-1.5 rounded border border-line bg-panel-2 px-2.5 py-1 text-xs text-fg-muted hover:text-accent"
+                className="flex items-center gap-1.5 rounded border border-line bg-panel px-2.5 py-1 text-xs font-medium text-fg-muted hover:text-accent hover:border-gray-300 transition-colors font-sans"
               >
                 <RefreshCw className="size-3.5" />
                 Refresh
               </button>
             }
           />
-          <div className="space-y-4 p-4">
+          <div className="space-y-4 p-5">
             {/* Search Input Bar */}
             <form onSubmit={handleSearchSubmit} className="flex gap-2">
               <div className="relative flex-1">
@@ -147,13 +141,13 @@ export function TransactionsPage() {
                   type="text"
                   value={searchTxid}
                   onChange={(e) => setSearchTxid(e.target.value)}
-                  placeholder="Search full or partial TXID hash (e.g. a587d8...)"
-                  className="w-full rounded-md border border-line bg-panel-2 py-2 pl-9 pr-4 text-xs font-mono-id text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+                  placeholder="Search TXID hash (e.g. 8315167db4...)"
+                  className="w-full rounded border border-line bg-panel-2 py-2 pl-9 pr-4 text-xs font-mono text-fg placeholder:text-fg-subtle placeholder:font-sans focus:border-accent focus:bg-panel focus:outline-none transition-colors"
                 />
               </div>
               <button
                 type="submit"
-                className="rounded-md border border-accent/40 bg-accent-soft px-4 py-2 text-xs font-medium text-accent hover:bg-accent/10"
+                className="rounded border border-accent bg-accent px-4 py-2 text-xs font-medium text-white hover:bg-accent/90 transition-colors font-sans"
               >
                 Search
               </button>
@@ -161,18 +155,17 @@ export function TransactionsPage() {
                 <button
                   type="button"
                   onClick={handleResetFilters}
-                  className="rounded-md border border-line bg-panel-2 px-3 py-2 text-xs text-fg-muted hover:text-fg"
+                  className="rounded border border-line bg-panel px-3 py-2 text-xs font-medium text-fg-muted hover:text-fg hover:border-gray-300 font-sans"
                 >
-                  Clear Filters
+                  Reset
                 </button>
               ) : null}
             </form>
 
-            {/* Filter Rows */}
-            <div className="grid grid-cols-1 gap-4 border-t border-line-soft pt-3 md:grid-cols-2 lg:grid-cols-4">
-              {/* Severity Chips */}
+            {/* Compact Filter Controls Grid */}
+            <div className="grid grid-cols-1 gap-4 border-t border-line-soft pt-4 sm:grid-cols-2 lg:grid-cols-4 text-xs font-sans">
               <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
                   Severity Level
                 </label>
                 <div className="flex flex-wrap gap-1">
@@ -187,8 +180,8 @@ export function TransactionsPage() {
                       className={cn(
                         "rounded border px-2 py-1 text-xs font-medium capitalize transition-colors",
                         selectedSeverity === s
-                          ? "border-accent/40 bg-accent-soft text-accent"
-                          : "border-line bg-panel-2 text-fg-muted hover:text-fg",
+                          ? "border-accent bg-accent-soft text-accent font-semibold"
+                          : "border-line bg-panel text-fg-muted hover:text-fg hover:border-gray-300",
                       )}
                     >
                       {s}
@@ -197,9 +190,8 @@ export function TransactionsPage() {
                 </div>
               </div>
 
-              {/* Behavior Typology */}
               <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
                   Behavior Typology
                 </label>
                 <select
@@ -208,7 +200,7 @@ export function TransactionsPage() {
                     setSelectedBehavior(e.target.value)
                     setPage(1)
                   }}
-                  className="w-full rounded border border-line bg-panel-2 px-2.5 py-1.5 text-xs text-fg focus:border-accent focus:outline-none"
+                  className="w-full rounded border border-line bg-panel px-2.5 py-1.5 text-xs text-fg focus:border-accent focus:outline-none font-sans"
                 >
                   <option value="all">All Typologies (11 scenarios)</option>
                   {BEHAVIOR_TYPOLOGIES.map((b) => (
@@ -219,9 +211,8 @@ export function TransactionsPage() {
                 </select>
               </div>
 
-              {/* Observed Network Country */}
               <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
                   Observed Country
                 </label>
                 <select
@@ -230,7 +221,7 @@ export function TransactionsPage() {
                     setCountryFilter(e.target.value)
                     setPage(1)
                   }}
-                  className="w-full rounded border border-line bg-panel-2 px-2.5 py-1.5 text-xs text-fg focus:border-accent focus:outline-none"
+                  className="w-full rounded border border-line bg-panel px-2.5 py-1.5 text-xs text-fg focus:border-accent focus:outline-none font-sans"
                 >
                   <option value="all">All Countries</option>
                   {availableCountries.map((c) => (
@@ -241,15 +232,14 @@ export function TransactionsPage() {
                 </select>
               </div>
 
-              {/* Sorting & Risk Slider */}
               <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
                   Sort Order
                 </label>
                 <select
                   value={sortKey}
                   onChange={(e) => setSortKey(e.target.value)}
-                  className="w-full rounded border border-line bg-panel-2 px-2.5 py-1.5 text-xs text-fg focus:border-accent focus:outline-none"
+                  className="w-full rounded border border-line bg-panel px-2.5 py-1.5 text-xs text-fg focus:border-accent focus:outline-none font-sans"
                 >
                   {sortOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -261,9 +251,9 @@ export function TransactionsPage() {
             </div>
 
             {/* Risk Range Slider */}
-            <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-3">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-                ML Risk Range: {minRisk} — {maxRisk}
+            <div className="flex flex-wrap items-center gap-3 border-t border-line-soft pt-3 text-xs">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-muted font-sans">
+                Minimum ML Risk Score: {minRisk}
               </span>
               <input
                 type="range"
@@ -274,31 +264,30 @@ export function TransactionsPage() {
                 className="h-1.5 w-44 cursor-pointer appearance-none rounded-full bg-panel-2 accent-accent"
                 aria-label="Minimum risk filter"
               />
-              <span className="text-xs text-fg-subtle">Min: {minRisk}</span>
             </div>
           </div>
         </Panel>
 
-        {/* Transactions Table Section */}
+        {/* Transactions Ledger Register */}
         <Panel>
           <PanelHeader
-            title="Transactions Register"
+            title="Transactions Ledger"
             subtitle={
               data
-                ? `Showing ${data.transactions.length} of ${formatNumber(data.totalItems)} transactions (Page ${data.page} of ${data.totalPages})`
-                : "Querying canonical transactions"
+                ? `Displaying ${data.transactions.length} of ${formatNumber(data.totalItems)} records (Page ${data.page} of ${data.totalPages})`
+                : "Querying transaction store"
             }
             icon={<ArrowLeftRight className="size-4" />}
             action={
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-fg-subtle">Per page:</span>
+              <div className="flex items-center gap-2 text-xs font-sans">
+                <span className="text-fg-subtle">Rows:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => {
                     setPageSize(Number(e.target.value))
                     setPage(1)
                   }}
-                  className="rounded border border-line bg-panel-2 px-2 py-1 text-xs text-fg focus:border-accent"
+                  className="rounded border border-line bg-panel px-2 py-1 text-xs text-fg focus:border-accent"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -312,7 +301,7 @@ export function TransactionsPage() {
           {errorMsg ? (
             <ErrorState title="Failed to load transactions" description={errorMsg} />
           ) : loading ? (
-            <LoadingState label="Fetching live transaction telemetry" />
+            <LoadingState label="Fetching transaction telemetry" />
           ) : !data || !data.transactions.length ? (
             <EmptyState
               title="No transactions match the selected filters"
@@ -320,86 +309,55 @@ export function TransactionsPage() {
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
+              <table className="w-full border-collapse text-left font-sans">
                 <thead>
-                  <tr className="border-b border-line text-left text-[11px] uppercase tracking-wider text-fg-subtle">
-                    <th className="px-4 py-2.5 font-medium">TXID</th>
-                    <th className="px-4 py-2.5 font-medium">Timestamp</th>
-                    <th className="px-4 py-2.5 font-medium">Amount (BTC)</th>
-                    <th className="px-4 py-2.5 font-medium">Fee</th>
-                    <th className="px-4 py-2.5 font-medium">Behavior Typology</th>
-                    <th className="px-4 py-2.5 font-medium">Network Telemetry</th>
-                    <th className="px-4 py-2.5 font-medium">Inferred Cluster</th>
-                    <th className="px-4 py-2.5 font-medium">ML Risk</th>
-                    <th className="px-4 py-2.5 text-right">Action</th>
+                  <tr className="border-b border-line bg-panel-2/60 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle select-none">
+                    <th className="px-5 py-3">TXID</th>
+                    <th className="px-4 py-3">Time</th>
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Behavior</th>
+                    <th className="px-4 py-3">Risk</th>
+                    <th className="px-5 py-3 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-line-soft text-xs">
                   {data.transactions.map((t) => (
                     <tr
                       key={t.txid}
                       onClick={() => navigate(`/investigation/${t.txid}?entityType=transaction`)}
-                      className="group cursor-pointer border-b border-line-soft transition-colors last:border-0 hover:bg-panel-2"
+                      className="group cursor-pointer transition-colors hover:bg-accent-soft/30"
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-3.5">
                         <MonoId value={t.txid} head={8} tail={6} copyable={false} />
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono-id text-xs text-fg-subtle">
+                      <td className="whitespace-nowrap px-4 py-3.5 font-mono text-[11px] text-fg-subtle">
                         {formatDateTime(t.timestamp)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono-id font-medium tabular-nums text-fg">
+                      <td className="whitespace-nowrap px-4 py-3.5 font-sans font-semibold tabular-nums text-fg">
                         {formatBtc(t.amount)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono-id text-xs tabular-nums text-fg-subtle">
-                        {t.fee.toFixed(5)} BTC
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded border border-line bg-panel-2 px-2 py-0.5 font-mono-id text-[11px] text-fg-muted">
+                      <td className="px-4 py-3.5">
+                        <span className="inline-flex items-center rounded border border-line bg-panel-2 px-2 py-0.5 text-[11px] font-medium text-fg">
                           {t.behaviorType || "normal"}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-fg-muted">
-                        <span className="font-mono-id text-fg">
-                          {t.network.countryCode !== "XX" ? t.network.countryCode : "—"}
-                        </span>
-                        {t.network.asn !== "—" ? (
-                          <span className="ml-1.5 text-fg-subtle">AS{t.network.asn}</span>
-                        ) : null}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono-id text-xs text-fg-subtle">
-                        {t.clusterId ? (
-                          <span className="text-accent">{t.clusterId}</span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3.5 font-mono font-bold text-xs tabular-nums">
                         {t.severity ? (
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="font-mono-id text-xs font-semibold tabular-nums"
-                              style={{ color: severityColorVar(t.severity) }}
-                            >
-                              {t.riskScore ?? "—"}
+                          <span className="inline-flex items-center gap-1.5" style={{ color: severityColorVar(t.severity) }}>
+                            <span className="size-1.5 rounded-full" style={{ backgroundColor: severityColorVar(t.severity) }} />
+                            <span>{t.riskScore ?? "—"}</span>
+                            <span className="text-[10px] uppercase font-sans font-medium text-fg-subtle">
+                              ({t.severity})
                             </span>
-                            <SeverityBadge severity={t.severity} />
-                          </div>
+                          </span>
                         ) : (
-                          <span className="text-xs text-fg-subtle">—</span>
+                          <span className="text-fg-subtle font-normal">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            navigate(`/investigation/${t.txid}?entityType=transaction`)
-                          }}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
-                        >
-                          Investigate
-                          <ExternalLink className="size-3" />
-                        </button>
+                      <td className="px-5 py-3.5 text-right">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent opacity-75 group-hover:opacity-100 transition-opacity">
+                          Investigate <ExternalLink className="size-3" />
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -408,28 +366,28 @@ export function TransactionsPage() {
             </div>
           )}
 
-          {/* Pagination Footer */}
+          {/* Institutional Pagination Footer */}
           {data && data.totalPages > 1 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-xs">
-              <span className="text-fg-subtle">
-                Showing Page {data.page} of {data.totalPages} ({data.totalItems} total transactions)
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3 text-xs font-sans">
+              <span className="text-fg-muted">
+                Page <span className="font-semibold text-fg">{data.page}</span> of {data.totalPages} ({formatNumber(data.totalItems)} total items)
               </span>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   disabled={data.page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="flex items-center gap-1 rounded border border-line bg-panel-2 px-2.5 py-1 text-fg-muted hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex items-center gap-1 rounded border border-line bg-panel px-2.5 py-1 text-fg-muted hover:text-fg hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ChevronLeft className="size-3.5" />
                   Previous
                 </button>
-                <span className="px-2 font-mono-id text-fg">{data.page}</span>
+                <span className="px-2 font-mono text-fg font-medium">{data.page}</span>
                 <button
                   type="button"
                   disabled={data.page >= data.totalPages}
                   onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
-                  className="flex items-center gap-1 rounded border border-line bg-panel-2 px-2.5 py-1 text-fg-muted hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex items-center gap-1 rounded border border-line bg-panel px-2.5 py-1 text-fg-muted hover:text-fg hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                   <ChevronRight className="size-3.5" />

@@ -11,7 +11,7 @@ import {
   Activity,
   Fingerprint,
   BrainCircuit,
-  ShieldAlert,
+  Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getHealth } from "@/api"
@@ -46,7 +46,7 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    title: "ALERTS & ANALYSIS",
+    title: "ALERTS",
     items: [
       { to: "/alerts", label: "Alerts", icon: Bell },
       { to: "/behaviors", label: "Behavior Analytics", icon: Activity },
@@ -63,52 +63,13 @@ const navSections: NavSection[] = [
 ]
 
 export function Sidebar() {
-  const [healthStatus, setHealthStatus] = useState<"online" | "offline" | "checking">("checking")
-
-  useEffect(() => {
-    let mounted = true
-
-    function check() {
-      getHealth()
-        .then((res) => {
-          if (!mounted) return
-          setHealthStatus(res.status === "healthy" ? "online" : "offline")
-        })
-        .catch(() => {
-          if (!mounted) return
-          setHealthStatus("offline")
-        })
-    }
-
-    check()
-    const interval = setInterval(check, 15000)
-
-    return () => {
-      mounted = false
-      clearInterval(interval)
-    }
-  }, [])
-
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-panel">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <span className="grid size-8 place-items-center rounded-md border border-accent/30 bg-accent-soft text-accent">
-          <ShieldAlert className="size-4.5" />
-        </span>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold tracking-tight text-fg">
-            BTC INVESTIGATOR
-          </p>
-          <p className="text-[10px] uppercase tracking-widest text-fg-subtle">
-            Forensics Terminal
-          </p>
-        </div>
-      </div>
-
-      <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-2">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-[#262626] bg-[#171717] select-none text-neutral-200 font-sans">
+      {/* Navigation Sections */}
+      <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-2.5 py-4">
         {navSections.map((section) => (
-          <div key={section.title} className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-fg-subtle">
+          <div key={section.title} className="space-y-0.5">
+            <p className="px-3 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-1">
               {section.title}
             </p>
             <div className="flex flex-col gap-0.5">
@@ -118,10 +79,10 @@ export function Sidebar() {
                   to={to}
                   className={({ isActive }) =>
                     cn(
-                      "group flex items-center gap-2.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      "group flex items-center gap-2.5 rounded px-3 py-1.5 text-xs font-medium transition-colors",
                       isActive
-                        ? "bg-accent-soft text-accent border border-accent/20"
-                        : "text-fg-muted hover:bg-panel-2 hover:text-fg",
+                        ? "bg-[#252525] text-white font-semibold border-l-2 border-[#1E4D7B]"
+                        : "text-neutral-400 hover:bg-[#202020] hover:text-neutral-200",
                     )
                   }
                 >
@@ -129,8 +90,8 @@ export function Sidebar() {
                     <>
                       <Icon
                         className={cn(
-                          "size-4 shrink-0",
-                          isActive ? "text-accent" : "text-fg-subtle group-hover:text-fg",
+                          "size-3.5 shrink-0",
+                          isActive ? "text-[#5A87B8]" : "text-neutral-400 group-hover:text-neutral-200",
                         )}
                       />
                       <span className="truncate">{label}</span>
@@ -143,40 +104,10 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="mx-3 mb-4 mt-2 border-t border-line pt-4">
-        <div className="flex items-center gap-2 rounded-md bg-panel-2 px-3 py-2">
-          <span className="relative flex size-2">
-            {healthStatus === "online" ? (
-              <>
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-risk-low/60" />
-                <span className="relative inline-flex size-2 rounded-full bg-risk-low" />
-              </>
-            ) : healthStatus === "checking" ? (
-              <span className="relative inline-flex size-2 rounded-full bg-risk-medium" />
-            ) : (
-              <span className="relative inline-flex size-2 rounded-full bg-risk-critical" />
-            )}
-          </span>
-          <span className="text-xs text-fg-muted">
-            System:{" "}
-            <span
-              className={cn(
-                "font-medium",
-                healthStatus === "online"
-                  ? "text-risk-low"
-                  : healthStatus === "checking"
-                    ? "text-risk-medium"
-                    : "text-risk-critical",
-              )}
-            >
-              {healthStatus === "online"
-                ? "Online"
-                : healthStatus === "checking"
-                  ? "Checking…"
-                  : "Offline"}
-            </span>
-          </span>
-        </div>
+      {/* Quiet Session Footer */}
+      <div className="border-t border-[#242424] px-4 py-3 text-[10px] text-neutral-400">
+        <p className="font-mono uppercase tracking-wider">OFFLINE ENGINE</p>
+        <p className="text-neutral-400 mt-0.5 font-sans">DuckDB • XGBoost • TreeSHAP</p>
       </div>
     </aside>
   )

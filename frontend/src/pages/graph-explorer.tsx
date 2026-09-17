@@ -2,49 +2,43 @@ import { useEffect, useRef, useState, useMemo } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 import {
-  Share2,
   Search,
   Maximize2,
   Minimize2,
   Plus,
   Minus,
   Crosshair,
-  Layers,
-  Filter,
-  ExternalLink,
-  ShieldAlert,
-  ArrowRight,
-  Clock,
   X,
   RefreshCw,
   GitFork,
 } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
-import { Panel, PanelHeader } from "@/components/ui/panel"
+import { Panel } from "@/components/ui/panel"
 import { SeverityBadge, severityColorVar } from "@/components/ui/badges"
 import { MonoId } from "@/components/ui/mono-id"
 import { LoadingState, ErrorState, EmptyState } from "@/components/ui/states"
 import { getAnalysisGraph, getAddressSubgraph } from "@/api"
 import { getActiveContext } from "@/data/service"
-import type { GraphExport, GraphNodeDto, GraphEdgeDto } from "@/api/types"
-import type { EntityType, Severity } from "@/data/types"
-import { formatBtc, formatDateTime, formatNumber, cn } from "@/lib/utils"
+import type { GraphExport } from "@/api/types"
+import type { Severity } from "@/data/types"
+import { formatDateTime, formatNumber, cn } from "@/lib/utils"
 
+// Institutional palette: muted blue (wallet), navy (transaction), amber (IP), red (mixer), green (exchange)
 const typeColors: Record<string, string> = {
-  wallet: "#38bdf8",
-  address: "#38bdf8",
-  transaction: "#a78bfa",
-  ip: "#f59e0b",
-  network: "#f59e0b",
-  exchange: "#22c55e",
-  mixer: "#ef4444",
+  wallet: "#3B6D9C",
+  address: "#3B6D9C",
+  transaction: "#173B63",
+  ip: "#A46A16",
+  network: "#A46A16",
+  exchange: "#2F6B4F",
+  mixer: "#A63D3D",
 }
 
 const severityColors: Record<string, string> = {
-  low: "#22c55e",
-  medium: "#f59e0b",
-  high: "#f97316",
-  critical: "#ef4444",
+  low: "#2F6B4F",
+  medium: "#A46A16",
+  high: "#B85D1B",
+  critical: "#A63D3D",
 }
 
 interface SelectedNodeInfo {
@@ -97,12 +91,8 @@ export function GraphExplorerPage() {
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdgeInfo | null>(null)
 
   // Filters
-  const [nodeTypeFilter, setNodeTypeFilter] = useState<Record<string, boolean>>({
-    address: true,
-    transaction: true,
-  })
   const [suspiciousOnly, setSuspiciousOnly] = useState(false)
-  const [minEdgeBtc, setMinEdgeBtc] = useState(0)
+  const minEdgeBtc = 0
 
   // Load canonical full graph or focused subgraph
   async function loadGraphData(targetAddressId?: string, hops = 2) {
@@ -145,13 +135,12 @@ export function GraphExplorerPage() {
 
     for (const n of rawGraph.nodes) {
       const nType = (n.nodeType || "address").toLowerCase()
-      if (nodeTypeFilter[nType] === false) continue
       if (suspiciousOnly && (!n.riskLevel || (n.riskLevel !== "high" && n.riskLevel !== "critical"))) {
         continue
       }
 
       validNodeIds.add(n.id)
-      const color = n.riskLevel ? severityColors[n.riskLevel.toLowerCase()] || typeColors[nType] : typeColors[nType] || "#38bdf8"
+      const color = n.riskLevel ? severityColors[n.riskLevel.toLowerCase()] || typeColors[nType] : typeColors[nType] || "#475569"
       const isFocused = Boolean(focusParam && n.id === focusParam)
 
       nodes.push({
@@ -191,9 +180,9 @@ export function GraphExplorerPage() {
     }
 
     return [...nodes, ...edges]
-  }, [rawGraph, nodeTypeFilter, suspiciousOnly, minEdgeBtc, focusParam])
+  }, [rawGraph, suspiciousOnly, minEdgeBtc, focusParam])
 
-  // Initialize Cytoscape
+  // Initialize Cytoscape in Light Institutional Theme
   useEffect(() => {
     if (!containerRef.current) return
 
@@ -206,55 +195,57 @@ export function GraphExplorerPage() {
           style: {
             "background-color": "data(color)",
             label: "data(label)",
-            color: "#e6edf3",
+            color: "#171717",
             "font-size": "10px",
-            "font-family": "JetBrains Mono, monospace",
+            "font-family": "Inter, sans-serif",
+            "font-weight": "normal",
             "text-valign": "bottom",
-            "text-margin-y": 6,
-            "text-outline-color": "#0b0f14",
+            "text-margin-y": 5,
+            "text-outline-color": "#FFFFFF",
             "text-outline-width": 2,
-            width: 36,
-            height: 36,
-            "border-width": 2,
-            "border-color": "#0b0f14",
+            width: 32,
+            height: 32,
+            "border-width": 1.5,
+            "border-color": "#FFFFFF",
             shape: "data(shape)" as never,
           },
         },
         {
           selector: "node[isFocus = 1]",
           style: {
-            width: 54,
-            height: 54,
+            width: 48,
+            height: 48,
             "border-width": 3,
-            "border-color": "#38bdf8",
+            "border-color": "#173B63",
             "font-size": "11px",
+            "font-weight": "bold",
           },
         },
         {
           selector: "edge",
           style: {
             width: 1.5,
-            "line-color": "#26313d",
-            "target-arrow-color": "#26313d",
+            "line-color": "#CBD5E1",
+            "target-arrow-color": "#CBD5E1",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
-            "arrow-scale": 0.85,
+            "arrow-scale": 0.8,
             label: "data(label)",
-            "font-size": "8px",
+            "font-size": "9px",
             "font-family": "JetBrains Mono, monospace",
-            color: "#64748b",
+            color: "#64748B",
             "text-rotation": "autorotate",
-            "text-background-color": "#0b0f14",
-            "text-background-opacity": 1,
+            "text-background-color": "#FFFFFF",
+            "text-background-opacity": 0.9,
             "text-background-padding": "2px",
           },
         },
         {
           selector: "edge[suspicious = 1]",
           style: {
-            "line-color": "#f97316",
-            "target-arrow-color": "#f97316",
-            width: 2.5,
+            "line-color": "#B85D1B",
+            "target-arrow-color": "#B85D1B",
+            width: 2.2,
           },
         },
         {
@@ -263,11 +254,11 @@ export function GraphExplorerPage() {
         },
         {
           selector: ".highlight",
-          style: { "border-color": "#38bdf8", "border-width": 3 },
+          style: { "border-color": "#173B63", "border-width": 3 },
         },
         {
           selector: "edge.highlight",
-          style: { "line-color": "#38bdf8", "target-arrow-color": "#38bdf8", width: 2.5 },
+          style: { "line-color": "#173B63", "target-arrow-color": "#173B63", width: 2.5 },
         },
       ],
       layout: {
@@ -284,7 +275,6 @@ export function GraphExplorerPage() {
 
     cyRef.current = cy
 
-    // Handle node tap
     cy.on("tap", "node", (evt) => {
       const node = evt.target
       const id = node.id()
@@ -308,7 +298,6 @@ export function GraphExplorerPage() {
       }
     })
 
-    // Handle edge tap
     cy.on("tap", "edge", (evt) => {
       const edge = evt.target
       const id = edge.id()
@@ -332,7 +321,6 @@ export function GraphExplorerPage() {
       }
     })
 
-    // Clear on background tap
     cy.on("tap", (evt) => {
       if (evt.target === cy) {
         cy.elements().removeClass("faded highlight")
@@ -374,24 +362,24 @@ export function GraphExplorerPage() {
   return (
     <AppLayout title="Graph Explorer">
       <div className={cn("space-y-4", isFullscreen && "fixed inset-0 z-50 bg-bg p-6 overflow-hidden")}>
-        {/* Top Search & Filter Bar */}
+        {/* Institutional Search & Filter Bar */}
         <Panel>
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 font-sans text-xs">
             {/* Search */}
-            <form onSubmit={handleSearchSubmit} className="flex min-w-[300px] flex-1 items-center gap-2">
+            <form onSubmit={handleSearchSubmit} className="flex min-w-[280px] flex-1 items-center gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-2.5 size-4 text-fg-subtle" />
+                <Search className="absolute left-3 top-2.5 size-3.5 text-fg-subtle" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Focus address or TXID (subgraph center)..."
-                  className="w-full rounded-md border border-line bg-panel-2 py-1.5 pl-9 pr-3 text-xs font-mono-id text-fg focus:border-accent focus:outline-none"
+                  placeholder="Focus address or TXID hash..."
+                  className="w-full rounded border border-line bg-panel-2 py-1.5 pl-9 pr-3 text-xs text-fg focus:border-accent focus:bg-panel focus:outline-none transition-colors"
                 />
               </div>
               <button
                 type="submit"
-                className="rounded border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/10"
+                className="rounded border border-accent bg-accent px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-accent/90 transition-colors"
               >
                 Focus
               </button>
@@ -402,7 +390,7 @@ export function GraphExplorerPage() {
                     setSearchQuery("")
                     loadGraphData(undefined, currentHops)
                   }}
-                  className="rounded border border-line bg-panel-2 px-2.5 py-1.5 text-xs text-fg-muted hover:text-fg"
+                  className="rounded border border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-fg-muted hover:text-fg hover:border-gray-300"
                 >
                   Reset
                 </button>
@@ -410,10 +398,10 @@ export function GraphExplorerPage() {
             </form>
 
             {/* Hops Expansion Selector */}
-            <div className="flex items-center gap-1.5 rounded-md border border-line bg-panel-2 p-1 text-xs">
-              <span className="px-2 font-medium text-fg-subtle flex items-center gap-1">
-                <GitFork className="size-3.5" />
-                Hops:
+            <div className="flex items-center gap-1.5 rounded border border-line bg-panel p-1">
+              <span className="px-2 font-semibold text-fg-muted uppercase tracking-wider text-[10px] flex items-center gap-1">
+                <GitFork className="size-3" />
+                Depth:
               </span>
               {[1, 2, 3].map((h) => (
                 <button
@@ -422,7 +410,7 @@ export function GraphExplorerPage() {
                   onClick={() => handleHopChange(h)}
                   className={cn(
                     "rounded px-2.5 py-1 text-xs font-semibold transition-colors",
-                    currentHops === h ? "bg-accent-soft text-accent" : "text-fg-muted hover:text-fg",
+                    currentHops === h ? "bg-accent text-white" : "text-fg-muted hover:text-fg",
                   )}
                 >
                   {h}-hop
@@ -431,20 +419,20 @@ export function GraphExplorerPage() {
             </div>
 
             {/* Quick Filters */}
-            <div className="flex items-center gap-2 text-xs">
-              <label className="flex items-center gap-1.5 cursor-pointer text-fg-muted hover:text-fg">
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 cursor-pointer text-fg-muted hover:text-fg font-medium">
                 <input
                   type="checkbox"
                   checked={suspiciousOnly}
                   onChange={(e) => setSuspiciousOnly(e.target.checked)}
-                  className="rounded border-line bg-panel-2 accent-accent"
+                  className="rounded border-line accent-accent"
                 />
                 High Risk Only
               </label>
               <button
                 type="button"
                 onClick={() => loadGraphData(searchQuery.trim() || undefined, currentHops)}
-                className="flex items-center gap-1 rounded border border-line bg-panel-2 px-2.5 py-1 text-fg-muted hover:text-accent"
+                className="flex items-center gap-1 rounded border border-line bg-panel px-2.5 py-1.5 text-fg-muted hover:text-fg hover:border-gray-300"
               >
                 <RefreshCw className="size-3" />
                 Reload
@@ -452,7 +440,7 @@ export function GraphExplorerPage() {
               <button
                 type="button"
                 onClick={() => setIsFullscreen(!isFullscreen)}
-                className="flex items-center gap-1 rounded border border-line bg-panel-2 px-2.5 py-1 text-fg-muted hover:text-accent"
+                className="flex items-center gap-1 rounded border border-line bg-panel px-2.5 py-1.5 text-fg-muted hover:text-fg hover:border-gray-300"
               >
                 {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
                 {isFullscreen ? "Exit" : "Full"}
@@ -462,9 +450,9 @@ export function GraphExplorerPage() {
         </Panel>
 
         {/* Canvas & Right-side Inspector */}
-        <div className="relative flex h-[720px] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-panel">
+        <div className="relative flex h-[720px] overflow-hidden rounded-lg border border-line bg-panel shadow-sm">
           {/* Main Cytoscape Canvas */}
-          <div className="relative flex-1 h-full">
+          <div className="relative flex-1 h-full bg-[#F8F9FA]">
             {loading ? (
               <LoadingState label="Computing topological graph layout" />
             ) : errorMsg ? (
@@ -475,23 +463,24 @@ export function GraphExplorerPage() {
               <div ref={containerRef} className="panel-grid h-full w-full" />
             )}
 
-            {/* Canvas Controls */}
-            <div className="absolute left-3 bottom-3 flex items-center gap-2 rounded border border-line bg-panel/90 px-3 py-1.5 text-xs text-fg-subtle backdrop-blur">
-              <span className="font-mono-id">
+            {/* Canvas Telemetry Badge */}
+            <div className="absolute left-3 bottom-3 flex items-center gap-2 rounded border border-line bg-panel/95 px-3 py-1.5 text-xs text-fg-muted font-sans shadow-sm">
+              <span className="font-mono text-fg font-medium">
                 {rawGraph?.nodeCount ?? 0} nodes • {rawGraph?.edgeCount ?? 0} edges
               </span>
               {rawGraph?.isSubgraph ? (
-                <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent">
+                <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent uppercase tracking-wider">
                   Subgraph ({currentHops}-hop)
                 </span>
               ) : null}
             </div>
 
+            {/* Canvas Navigation Controls */}
             <div className="absolute right-3 top-3 flex flex-col gap-1.5">
               <button
                 type="button"
                 onClick={() => zoomBy(1.25)}
-                className="grid size-8 place-items-center rounded border border-line bg-panel/90 text-fg-muted backdrop-blur hover:text-accent"
+                className="grid size-8 place-items-center rounded border border-line bg-panel text-fg-muted shadow-sm hover:text-accent hover:border-gray-300"
                 aria-label="Zoom in"
               >
                 <Plus className="size-4" />
@@ -499,7 +488,7 @@ export function GraphExplorerPage() {
               <button
                 type="button"
                 onClick={() => zoomBy(0.8)}
-                className="grid size-8 place-items-center rounded border border-line bg-panel/90 text-fg-muted backdrop-blur hover:text-accent"
+                className="grid size-8 place-items-center rounded border border-line bg-panel text-fg-muted shadow-sm hover:text-accent hover:border-gray-300"
                 aria-label="Zoom out"
               >
                 <Minus className="size-4" />
@@ -507,7 +496,7 @@ export function GraphExplorerPage() {
               <button
                 type="button"
                 onClick={fit}
-                className="grid size-8 place-items-center rounded border border-line bg-panel/90 text-fg-muted backdrop-blur hover:text-accent"
+                className="grid size-8 place-items-center rounded border border-line bg-panel text-fg-muted shadow-sm hover:text-accent hover:border-gray-300"
                 aria-label="Fit view"
               >
                 <Crosshair className="size-4" />
@@ -517,9 +506,9 @@ export function GraphExplorerPage() {
 
           {/* Right-Side Inspector Panel */}
           {(selectedNode || selectedEdge) && (
-            <div className="w-80 shrink-0 border-l border-line bg-panel/95 p-4 backdrop-blur overflow-y-auto space-y-4 shadow-xl shadow-black/40">
-              <div className="flex items-start justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            <div className="w-80 shrink-0 border-l border-line bg-panel p-5 overflow-y-auto space-y-4 shadow-sm font-sans">
+              <div className="flex items-start justify-between border-b border-line pb-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-fg-muted">
                   {selectedNode ? "Node Inspector" : "Edge Inspector"}
                 </span>
                 <button
@@ -539,11 +528,11 @@ export function GraphExplorerPage() {
               {selectedNode ? (
                 <div className="space-y-4">
                   <div>
-                    <h3 className="font-mono-id text-sm font-semibold text-fg break-all">
+                    <h3 className="font-mono text-xs font-semibold text-fg break-all">
                       {selectedNode.label}
                     </h3>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="rounded border border-line bg-panel-2 px-2 py-0.5 text-[11px] font-medium capitalize text-fg-muted">
+                      <span className="rounded border border-line bg-panel-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
                         {selectedNode.type}
                       </span>
                       {selectedNode.riskLevel ? (
@@ -554,15 +543,15 @@ export function GraphExplorerPage() {
 
                   {selectedNode.riskScore !== undefined ? (
                     <div className="rounded border border-line bg-panel-2 p-3">
-                      <span className="text-[11px] text-fg-subtle">Aggregate ML Risk</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Aggregate ML Risk</span>
                       <p
-                        className="font-mono-id text-xl font-bold tabular-nums"
+                        className="font-mono text-2xl font-bold tabular-nums mt-1"
                         style={{ color: severityColorVar((selectedNode.riskLevel?.toLowerCase() as Severity) || "low") }}
                       >
                         {selectedNode.riskScore} / 100
                       </p>
-                      <p className="mt-1 text-[10px] text-fg-subtle">
-                        Aggregated from associated transaction predictions.
+                      <p className="mt-1 text-[11px] text-fg-muted">
+                        Attributed from associated transaction predictions.
                       </p>
                     </div>
                   ) : null}
@@ -570,36 +559,36 @@ export function GraphExplorerPage() {
                   {selectedNode.metadata ? (
                     <div className="space-y-2 text-xs divide-y divide-line-soft">
                       <div className="flex justify-between py-1.5">
-                        <span className="text-fg-subtle">Transactions:</span>
-                        <span className="font-mono-id text-fg">{selectedNode.metadata.transactionCount ?? "—"}</span>
+                        <span className="text-fg-muted">Transactions:</span>
+                        <span className="font-mono text-fg font-medium">{selectedNode.metadata.transactionCount ?? "—"}</span>
                       </div>
                       <div className="flex justify-between py-1.5">
-                        <span className="text-fg-subtle">Total Received:</span>
-                        <span className="font-mono-id text-fg">{selectedNode.metadata.totalReceivedBtc ?? "—"} BTC</span>
+                        <span className="text-fg-muted">Total Received:</span>
+                        <span className="font-mono text-fg font-medium">{selectedNode.metadata.totalReceivedBtc ?? "—"} BTC</span>
                       </div>
                       <div className="flex justify-between py-1.5">
-                        <span className="text-fg-subtle">Total Sent:</span>
-                        <span className="font-mono-id text-fg">{selectedNode.metadata.totalSentBtc ?? "—"} BTC</span>
+                        <span className="text-fg-muted">Total Sent:</span>
+                        <span className="font-mono text-fg font-medium">{selectedNode.metadata.totalSentBtc ?? "—"} BTC</span>
                       </div>
                       <div className="flex justify-between py-1.5">
-                        <span className="text-fg-subtle">Active Days:</span>
-                        <span className="font-mono-id text-fg">{selectedNode.metadata.activeDays ?? "—"} days</span>
+                        <span className="text-fg-muted">Active Days:</span>
+                        <span className="font-mono text-fg font-medium">{selectedNode.metadata.activeDays ?? "—"} days</span>
                       </div>
                     </div>
                   ) : null}
 
-                  <div className="space-y-2 pt-2 border-t border-line">
+                  <div className="space-y-2 pt-3 border-t border-line">
                     <button
                       type="button"
                       onClick={() => navigate(`/investigation/${selectedNode.id}?entityType=${selectedNode.type}`)}
-                      className="w-full rounded border border-accent/40 bg-accent-soft py-2 text-xs font-medium text-accent hover:bg-accent/10"
+                      className="w-full rounded border border-accent bg-accent py-2 text-xs font-semibold text-white hover:bg-accent/90 transition-colors"
                     >
                       Investigate Node in Detail →
                     </button>
                     <button
                       type="button"
                       onClick={() => handleHopChange(currentHops >= 3 ? 1 : currentHops + 1)}
-                      className="w-full rounded border border-line bg-panel-2 py-1.5 text-xs text-fg hover:text-accent"
+                      className="w-full rounded border border-line bg-panel py-1.5 text-xs font-medium text-fg-muted hover:text-fg hover:border-gray-300"
                     >
                       Expand Neighborhood (+1 Hop)
                     </button>
@@ -609,29 +598,29 @@ export function GraphExplorerPage() {
                 /* Edge Inspector Content */
                 <div className="space-y-4">
                   <div>
-                    <span className="text-[11px] text-fg-subtle uppercase">Transaction Flow</span>
-                    <p className="mt-1 font-mono-id text-lg font-bold text-fg">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Aggregated Flow</span>
+                    <p className="mt-1 font-sans text-xl font-bold text-fg">
                       {selectedEdge.totalValueBtc} BTC
                     </p>
-                    <p className="text-xs text-fg-subtle">
+                    <p className="text-xs text-fg-muted mt-0.5">
                       {selectedEdge.transactionCount} transaction{selectedEdge.transactionCount === 1 ? "" : "s"} aggregated
                     </p>
                   </div>
 
                   <div className="space-y-2 text-xs rounded border border-line bg-panel-2 p-3">
                     <div>
-                      <span className="text-[10px] text-fg-subtle uppercase">Source Address</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Source Address</span>
                       <MonoId value={selectedEdge.source} head={10} tail={8} className="mt-0.5 block" />
                     </div>
                     <div className="pt-2 border-t border-line-soft">
-                      <span className="text-[10px] text-fg-subtle uppercase">Target Address</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Target Address</span>
                       <MonoId value={selectedEdge.target} head={10} tail={8} className="mt-0.5 block" />
                     </div>
                   </div>
 
                   {selectedEdge.transactions.length ? (
                     <div className="space-y-2">
-                      <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
                         Contained Transactions ({selectedEdge.transactions.length})
                       </span>
                       <div className="max-h-44 space-y-1.5 overflow-y-auto">
@@ -639,12 +628,12 @@ export function GraphExplorerPage() {
                           <div
                             key={t.transactionId}
                             onClick={() => navigate(`/investigation/${t.transactionId}?entityType=transaction`)}
-                            className="cursor-pointer rounded border border-line-soft bg-panel-2 p-2 hover:border-accent/40"
+                            className="cursor-pointer rounded border border-line bg-panel p-2 hover:border-accent transition-colors"
                           >
                             <MonoId value={t.transactionId} head={8} tail={6} copyable={false} />
                             <div className="mt-1 flex justify-between text-[11px] text-fg-muted">
-                              <span>{t.valueBtc} BTC</span>
-                              <span className="font-mono-id text-fg-subtle">
+                              <span className="font-semibold text-fg">{t.valueBtc} BTC</span>
+                              <span className="font-mono text-fg-subtle">
                                 {t.timestamp ? formatDateTime(t.timestamp) : "—"}
                               </span>
                             </div>

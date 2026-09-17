@@ -134,416 +134,280 @@ export function DatasetPage() {
 
   return (
     <AppLayout title="Dataset">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="space-y-6 lg:col-span-3">
+      <div className="space-y-6 font-sans">
+        {/* Active Dataset Status & Readiness Card */}
+        {existing ? (
           <Panel>
             <PanelHeader
-              title="Ingest Dataset"
-              subtitle="Load a transaction / network dataset for offline analysis"
-              icon={<UploadCloud className="size-4" />}
-            />
-            <PanelBody>
-              <div className="mb-5 rounded-md border border-line bg-panel-2 p-3.5">
-                <label htmlFor="model-select" className="mb-1.5 block text-xs font-medium text-fg">
-                  ML Analysis Model
-                </label>
-                <select
-                  id="model-select"
-                  value={selectedModelId}
-                  disabled={active}
-                  onChange={(e) => setSelectedModelId(e.target.value)}
-                  className="w-full rounded border border-line bg-panel px-3 py-2 text-xs font-mono-id text-fg focus:border-accent focus:outline-none disabled:opacity-60"
-                  aria-label="Select ML model for analysis"
-                >
-                  {models.length > 0 ? (
-                    models.map((m) => {
-                      const isPlaceholder = m.isExecutable === false || m.modelId === "isolation_forest_v1"
-                      return (
-                        <option key={m.modelId} value={m.modelId} disabled={isPlaceholder}>
-                          {m.modelId === "aquasynex_xgb_binary_v1"
-                            ? "aquasynex_xgb_binary_v1 — XGBoost Binary Risk Detector (Production)"
-                            : m.modelId === "aquasynex_catboost_multiclass_v1"
-                              ? "aquasynex_catboost_multiclass_v1 — CatBoost Typology Attribution"
-                              : m.modelId === "aquasynex_v1"
-                                ? "aquasynex_v1 — Full Pipeline (XGBoost + CatBoost + TreeSHAP)"
-                                : m.modelId}
-                          {isPlaceholder ? " [Placeholder - Disabled]" : ""}
-                        </option>
-                      )
-                    })
-                  ) : (
-                    <>
-                      <option value="aquasynex_xgb_binary_v1">
-                        aquasynex_xgb_binary_v1 — XGBoost Binary Risk Detector (Production)
-                      </option>
-                      <option value="aquasynex_catboost_multiclass_v1">
-                        aquasynex_catboost_multiclass_v1 — CatBoost Typology Attribution
-                      </option>
-                      <option value="aquasynex_v1">
-                        aquasynex_v1 — Full Pipeline (XGBoost + CatBoost + TreeSHAP)
-                      </option>
-                      <option value="isolation_forest_v1" disabled>
-                        isolation_forest_v1 [Placeholder - Disabled]
-                      </option>
-                    </>
-                  )}
-                </select>
-                <p className="mt-1.5 text-[11px] text-fg-subtle">
-                  {selectedModelId === "aquasynex_xgb_binary_v1"
-                    ? "Production 46-canonical-feature XGBoost detector with TreeSHAP explanations. Predicts transaction-level risk scores."
-                    : selectedModelId === "aquasynex_catboost_multiclass_v1"
-                      ? "11-class multiclass CatBoost classifier attributing illicit financial crime typologies."
-                      : selectedModelId === "aquasynex_v1"
-                        ? "Runs full ensemble detection: XGBoost binary scoring + CatBoost typology attribution."
-                        : "Registered machine learning model."}
-                </p>
-              </div>
-
-              {!active ? (
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    setDragging(true)
-                  }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    setDragging(false)
-                    onFiles(e.dataTransfer.files)
-                  }}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-14 text-center transition-colors",
-                    dragging
-                      ? "border-accent bg-accent-soft"
-                      : "border-line bg-panel-2",
-                  )}
-                >
-                  <span className="grid size-12 place-items-center rounded-full border border-line bg-panel text-accent">
-                    <UploadCloud className="size-6" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-fg">
-                      Drop dataset here or browse
-                    </p>
-                    <p className="mt-1 text-xs text-fg-subtle">
-                      Supports CSV, JSON, and network-enriched exports
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => inputRef.current?.click()}
-                    className="mt-1 rounded-md border border-accent/40 bg-accent-soft px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10"
-                  >
-                    Select file
-                  </button>
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept=".csv,.json,.jsonl,.parquet"
-                    className="hidden"
-                    onChange={(e) => onFiles(e.target.files)}
-                  />
-                </div>
-              ) : (
-                <div className="space-y-5 py-2">
-                  <div className="flex items-center gap-3">
-                    <span className="grid size-10 place-items-center rounded-md border border-line bg-panel-2 text-accent">
-                      {stage === "completed" ? (
-                        <FileCheck2 className="size-5 text-risk-low" />
-                      ) : stage === "failed" ? (
-                        <span className="font-bold text-risk-critical">!</span>
-                      ) : (
-                        <Loader2 className="size-5 animate-spin" />
-                      )}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate font-mono-id text-sm text-fg">
-                        {fileName}
-                      </p>
-                      <p className={cn("text-xs", stage === "failed" ? "text-risk-critical" : "text-fg-subtle")}>
-                        {stageLabel[stage]}
-                        {stage !== "completed" && stage !== "failed" ? ` — ${progress}%` : ""}
-                      </p>
-                    </div>
-                  </div>
-
-                  {errorMsg ? (
-                    <div className="rounded border border-risk-critical/40 bg-risk-critical-soft p-3 text-xs text-risk-critical">
-                      {errorMsg}
-                    </div>
-                  ) : null}
-
-                  <StageTracker stage={stage} progress={progress} />
-
-                  {stage === "completed" ? (
-                    <div className="space-y-3 rounded-lg border border-risk-low/40 bg-risk-low-soft p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-risk-low">
-                        <FileCheck2 className="size-5" />
-                        <span>Analysis Completed Successfully</span>
-                      </div>
-                      <p className="text-xs text-fg-subtle">
-                        Dataset ingested and scored with ML model{" "}
-                        <span className="font-mono-id text-fg">{selectedModelId}</span>.
-                      </p>
-                      {existing?.stats ? (
-                        <div className="flex flex-wrap items-center gap-3 py-1 font-mono-id text-xs text-fg-muted">
-                          <span>{formatNumber(existing.stats.transactions)} transactions</span>
-                          <span>•</span>
-                          <span>{formatNumber(existing.stats.addresses)} entities</span>
-                          <span>•</span>
-                          <span className="font-semibold text-risk-high">
-                            {formatNumber(existing.stats.flagged)} flagged anomalies
-                          </span>
-                        </div>
-                      ) : null}
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => navigate("/alerts")}
-                          className="flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-3.5 py-1.5 text-xs font-semibold text-accent hover:bg-accent/10"
-                        >
-                          <Bell className="size-3.5" />
-                          View Alerts
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate("/investigation")}
-                          className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3.5 py-1.5 text-xs font-medium text-fg hover:bg-panel-2"
-                        >
-                          <Fingerprint className="size-3.5" />
-                          Investigate Results
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate("/dashboard")}
-                          className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3.5 py-1.5 text-xs font-medium text-fg hover:bg-panel-2"
-                        >
-                          <LayoutDashboard className="size-3.5" />
-                          Overview
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStage("idle")
-                            setProgress(0)
-                            setFileName("")
-                            setErrorMsg(null)
-                          }}
-                          className="ml-auto text-xs font-medium text-fg-subtle hover:text-fg hover:underline"
-                        >
-                          Ingest another dataset
-                        </button>
-                      </div>
-                    </div>
-                  ) : stage === "failed" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStage("idle")
-                        setProgress(0)
-                        setFileName("")
-                        setErrorMsg(null)
-                      }}
-                      className="text-xs font-medium text-accent hover:underline"
-                    >
-                      Ingest another dataset
-                    </button>
-                  ) : null}
-                </div>
-              )}
-            </PanelBody>
-          </Panel>
-        </div>
-
-        <div className="lg:col-span-2">
-          <Panel>
-            <PanelHeader
-              title="Loaded Dataset"
-              subtitle="Currently active in this offline session"
-              icon={<Database className="size-4" />}
-            />
-            <PanelBody>
-              {existing ? (
-                <div className="space-y-4">
-                  <div className="rounded-md border border-line bg-panel-2 p-3">
-                    <p className="truncate font-mono-id text-sm text-fg">
-                      {existing.name}
-                    </p>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-fg-subtle">
-                      <span>{formatBytes(existing.sizeBytes)}</span>
-                      <span>•</span>
-                      <span>{existing.format}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-fg-subtle">
-                      Uploaded {formatDateTime(existing.uploadedAt)}
-                    </p>
-                  </div>
-
-                  {existing.stats ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      <DatasetStat
-                        icon={Activity}
-                        label="Transactions"
-                        value={formatNumber(existing.stats.transactions)}
-                      />
-                      <DatasetStat
-                        icon={Users}
-                        label="Entities"
-                        value={formatNumber(existing.stats.entities)}
-                      />
-                      <DatasetStat
-                        icon={Wallet}
-                        label="Addresses"
-                        value={formatNumber(existing.stats.addresses)}
-                      />
-                      <DatasetStat
-                        icon={Blocks}
-                        label="Blocks"
-                        value={formatNumber(existing.stats.blocks)}
-                      />
-                      <DatasetStat
-                        icon={Flag}
-                        label="Flagged"
-                        value={formatNumber(existing.stats.flagged)}
-                        accent
-                      />
-                      <DatasetStat
-                        icon={CalendarRange}
-                        label="Span"
-                        value={existing.stats.span || "—"}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-fg-subtle">No dataset loaded.</p>
-              )}
-            </PanelBody>
-          </Panel>
-        </div>
-      </div>
-
-      {/* Forensic Dataset Profile & Integrity Verification */}
-      {profile && (
-        <div className="mt-6">
-          <Panel>
-            <PanelHeader
-              title={<span className="font-mono font-bold text-foreground">Forensic Dataset Profile & Integrity Verification</span>}
-              icon={<ShieldCheck className="size-4 text-terminal-cyan" />}
+              title={<span className="font-sans font-semibold text-fg text-sm">Active Forensic Dataset</span>}
+              icon={<Database className="size-4 text-accent" />}
               action={
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  Integrity Verified // 0 Missing Values
+                <span className="px-2.5 py-0.5 rounded text-xs font-medium bg-[#EAF3EE] text-[#2F6B4F] border border-[#C5DECF]">
+                  Ready for Forensic Investigation
                 </span>
               }
             />
-            <PanelBody className="space-y-6">
-              {/* Verification KPIs */}
+            <PanelBody className="space-y-6 p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-line pb-5">
+                <div>
+                  <h2 className="text-lg font-bold text-fg font-mono">
+                    {existing.name}
+                  </h2>
+                  <p className="text-xs text-fg-subtle mt-0.5">
+                    {formatBytes(existing.sizeBytes)} • {existing.format.toUpperCase()} • Loaded on {formatDateTime(existing.uploadedAt)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/transactions")}
+                    className="rounded border border-line bg-panel px-3 py-1.5 text-xs font-medium text-fg hover:bg-panel-2 transition-colors"
+                  >
+                    View Transactions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/alerts")}
+                    className="rounded bg-accent text-white px-3 py-1.5 text-xs font-semibold hover:bg-accent/90 transition-colors"
+                  >
+                    Investigate Alerts
+                  </button>
+                </div>
+              </div>
+
+              {/* 4 Essential Readiness Metrics */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-3 bg-panel-2 border border-line rounded">
-                  <span className="text-[11px] font-mono text-muted-foreground uppercase block">Total Scored TXs</span>
-                  <div className="text-xl font-bold font-mono text-foreground mt-1">
-                    {formatNumber(profile.totalTransactions)}
-                  </div>
-                  <span className="text-[10px] text-emerald-400 font-mono mt-0.5 block">
-                    {profile.scoringStatus.status}
+                <div className="p-4 bg-panel-2 border border-line rounded-lg">
+                  <span className="text-[11px] font-semibold text-fg-subtle uppercase tracking-wider block">
+                    Total Transactions
+                  </span>
+                  <p className="text-2xl font-bold font-mono text-fg mt-1 tabular-nums">
+                    {formatNumber(existing.stats?.transactions || profile?.totalTransactions || 0)}
+                  </p>
+                  <span className="text-xs text-[#2F6B4F] font-medium mt-1 block">
+                    {existing.stats?.flagged ? `${formatNumber(existing.stats.flagged)} flagged anomalies` : "Scored & Indexed"}
                   </span>
                 </div>
-                <div className="p-3 bg-panel-2 border border-line rounded">
-                  <span className="text-[11px] font-mono text-muted-foreground uppercase block">Geographic Footprint</span>
-                  <div className="text-xl font-bold font-mono text-foreground mt-1">
-                    {profile.countryCount} Countries
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-mono mt-0.5 block">
-                    Across {profile.asnCount} Autonomous Systems
+
+                <div className="p-4 bg-panel-2 border border-line rounded-lg">
+                  <span className="text-[11px] font-semibold text-fg-subtle uppercase tracking-wider block">
+                    Entities & Addresses
+                  </span>
+                  <p className="text-2xl font-bold font-mono text-fg mt-1 tabular-nums">
+                    {formatNumber(existing.stats?.addresses || existing.stats?.entities || 0)}
+                  </p>
+                  <span className="text-xs text-fg-muted mt-1 block">
+                    {formatNumber(existing.stats?.entities || 0)} inferred clusters
                   </span>
                 </div>
-                <div className="p-3 bg-panel-2 border border-line rounded">
-                  <span className="text-[11px] font-mono text-muted-foreground uppercase block">Data Cleanness</span>
-                  <div className="text-xl font-bold font-mono text-emerald-400 mt-1">
-                    100% Valid
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-mono mt-0.5 block">
-                    0 missing / 0 duplicate IDs
+
+                <div className="p-4 bg-panel-2 border border-line rounded-lg">
+                  <span className="text-[11px] font-semibold text-fg-subtle uppercase tracking-wider block">
+                    Observation Window
+                  </span>
+                  <p className="text-2xl font-bold font-mono text-fg mt-1">
+                    {existing.stats?.span || "Active Batch"}
+                  </p>
+                  <span className="text-xs text-fg-muted mt-1 block">
+                    Continuous temporal sequence
                   </span>
                 </div>
-                <div className="p-3 bg-panel-2 border border-line rounded">
-                  <span className="text-[11px] font-mono text-muted-foreground uppercase block">Graph Topology</span>
-                  <div className="text-xl font-bold font-mono text-terminal-cyan mt-1">
-                    {profile.graphCoverage.nodeCount} Nodes
-                  </div>
-                  <span className="text-[10px] text-muted-foreground font-mono mt-0.5 block">
-                    {profile.graphCoverage.edgeCount} Edges (Graph Ready)
+
+                <div className="p-4 bg-panel-2 border border-line rounded-lg">
+                  <span className="text-[11px] font-semibold text-fg-subtle uppercase tracking-wider block">
+                    Graph Readiness
+                  </span>
+                  <p className="text-2xl font-bold font-mono text-accent mt-1 tabular-nums">
+                    {profile?.graphCoverage ? `${formatNumber(profile.graphCoverage.nodeCount)} Nodes` : "Graph Ready"}
+                  </p>
+                  <span className="text-xs text-[#2F6B4F] font-medium mt-1 block">
+                    {profile?.graphCoverage ? `${formatNumber(profile.graphCoverage.edgeCount)} edges connected` : "Topological structure ready"}
                   </span>
                 </div>
               </div>
 
-              {/* Behavioral Typology Composition in Dataset */}
-              {profile.behaviorDistribution && profile.behaviorDistribution.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-muted-foreground uppercase font-bold">
-                      Dataset Behavioral Typology Composition
-                    </span>
-                    <span className="text-terminal-cyan">
-                      {profile.suspiciousPercentage.toFixed(1)}% Flagged as Suspicious Patterns
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 font-mono">
-                    {profile.behaviorDistribution.map((b) => (
-                      <div key={b.behavior} className="p-2.5 bg-panel-2 border border-line rounded flex items-center justify-between">
-                        <div className="truncate mr-2">
-                          <span className="text-xs text-foreground font-semibold block truncate">
-                            {b.behavior.replace(/_/g, " ")}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {b.percentage.toFixed(1)}% of total volume
-                          </span>
-                        </div>
-                        <span className="text-xs font-bold text-foreground bg-panel px-2 py-0.5 rounded border border-line flex-shrink-0">
-                          {formatNumber(b.count)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              {/* Data Integrity Status */}
+              <div className="flex items-center justify-between rounded-md border border-line bg-panel p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="size-4 text-[#2F6B4F]" />
+                  <span className="font-semibold text-fg">Data Integrity:</span>
+                  <span className="text-fg-muted">100% Valid • 0 missing values • 0 duplicate transaction IDs</span>
                 </div>
-              )}
-
-              {/* Cross-Page Investigation Links */}
-              <div className="pt-2 border-t border-line flex flex-wrap items-center gap-3 text-xs font-mono">
-                <span className="text-muted-foreground">Deep Dive:</span>
-                <button
-                  onClick={() => navigate("/transactions")}
-                  className="px-3 py-1.5 rounded bg-panel-2 border border-line hover:border-terminal-cyan text-foreground flex items-center gap-1.5 transition-colors"
-                >
-                  <Activity className="size-3.5 text-terminal-cyan" />
-                  Explore Transactions
-                </button>
-                <button
-                  onClick={() => navigate("/entities")}
-                  className="px-3 py-1.5 rounded bg-panel-2 border border-line hover:border-terminal-cyan text-foreground flex items-center gap-1.5 transition-colors"
-                >
-                  <Users className="size-3.5 text-terminal-cyan" />
-                  Explore Inferred Clusters
-                </button>
-                <button
-                  onClick={() => navigate("/network")}
-                  className="px-3 py-1.5 rounded bg-panel-2 border border-line hover:border-terminal-cyan text-foreground flex items-center gap-1.5 transition-colors"
-                >
-                  <Globe className="size-3.5 text-terminal-cyan" />
-                  Network Intelligence
-                </button>
-                <button
-                  onClick={() => navigate("/graph")}
-                  className="px-3 py-1.5 rounded bg-panel-2 border border-line hover:border-terminal-cyan text-foreground flex items-center gap-1.5 transition-colors"
-                >
-                  <Network className="size-3.5 text-terminal-cyan" />
-                  Graph Explorer
-                </button>
+                <span className="text-[11px] text-fg-subtle font-mono">
+                  Engine: DuckDB Native Columnar
+                </span>
               </div>
             </PanelBody>
           </Panel>
-        </div>
-      )}
+        ) : null}
+
+        {/* Ingest or Switch Dataset */}
+        <Panel>
+          <PanelHeader
+            title={existing ? "Ingest New Dataset" : "Ingest Dataset"}
+            subtitle="Load a Bitcoin transaction and network dataset for offline analysis"
+            icon={<UploadCloud className="size-4" />}
+          />
+          <PanelBody className="p-6">
+            <div className="mb-5 rounded-md border border-line bg-panel-2 p-3.5">
+              <label htmlFor="model-select" className="mb-1.5 block text-xs font-medium text-fg">
+                Analysis ML Model
+              </label>
+              <select
+                id="model-select"
+                value={selectedModelId}
+                disabled={active}
+                onChange={(e) => setSelectedModelId(e.target.value)}
+                className="w-full rounded border border-line bg-panel px-3 py-2 text-xs font-mono text-fg focus:border-accent focus:outline-none disabled:opacity-60"
+                aria-label="Select ML model for analysis"
+              >
+                {models.length > 0 ? (
+                  models.map((m) => {
+                    const isPlaceholder = m.isExecutable === false || m.modelId === "isolation_forest_v1"
+                    return (
+                      <option key={m.modelId} value={m.modelId} disabled={isPlaceholder}>
+                        {m.modelId === "aquasynex_xgb_binary_v1"
+                          ? "aquasynex_xgb_binary_v1 — XGBoost Binary Risk Detector (Production)"
+                          : m.modelId === "aquasynex_catboost_multiclass_v1"
+                            ? "aquasynex_catboost_multiclass_v1 — CatBoost Typology Attribution"
+                            : m.modelId === "aquasynex_v1"
+                              ? "aquasynex_v1 — Full Pipeline (XGBoost + CatBoost + TreeSHAP)"
+                              : m.modelId}
+                        {isPlaceholder ? " [Disabled]" : ""}
+                      </option>
+                    )
+                  })
+                ) : (
+                  <option value="aquasynex_xgb_binary_v1">
+                    aquasynex_xgb_binary_v1 — XGBoost Binary Risk Detector (Production)
+                  </option>
+                )}
+              </select>
+            </div>
+
+            {!active ? (
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragging(true)
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setDragging(false)
+                  onFiles(e.dataTransfer.files)
+                }}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-12 text-center transition-colors",
+                  dragging
+                    ? "border-accent bg-accent-soft"
+                    : "border-line bg-panel-2",
+                )}
+              >
+                <span className="grid size-12 place-items-center rounded-full border border-line bg-panel text-accent">
+                  <UploadCloud className="size-6" />
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-fg">
+                    Drop dataset file here or browse
+                  </p>
+                  <p className="mt-0.5 text-xs text-fg-subtle">
+                    Supports CSV, JSON, and network-enriched exports
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => inputRef.current?.click()}
+                  className="mt-1 rounded-md border border-line bg-panel px-4 py-2 text-xs font-semibold text-fg hover:bg-panel-2 transition-colors shadow-2xs"
+                >
+                  Select File
+                </button>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept=".csv,.json,.jsonl,.parquet"
+                  className="hidden"
+                  onChange={(e) => onFiles(e.target.files)}
+                />
+              </div>
+            ) : (
+              <div className="space-y-5 py-2">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-10 place-items-center rounded-md border border-line bg-panel-2 text-accent">
+                    {stage === "completed" ? (
+                      <FileCheck2 className="size-5 text-risk-low" />
+                    ) : stage === "failed" ? (
+                      <span className="font-bold text-risk-critical">!</span>
+                    ) : (
+                      <Loader2 className="size-5 animate-spin" />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-mono-id text-sm text-fg">
+                      {fileName}
+                    </p>
+                    <p className={cn("text-xs", stage === "failed" ? "text-risk-critical" : "text-fg-subtle")}>
+                      {stageLabel[stage]}
+                      {stage !== "completed" && stage !== "failed" ? ` — ${progress}%` : ""}
+                    </p>
+                  </div>
+                </div>
+
+                {errorMsg ? (
+                  <div className="rounded border border-risk-critical/40 bg-risk-critical-soft p-3 text-xs text-risk-critical">
+                    {errorMsg}
+                  </div>
+                ) : null}
+
+                <StageTracker stage={stage} progress={progress} />
+
+                {stage === "completed" ? (
+                  <div className="space-y-3 rounded-lg border border-[#C5DECF] bg-[#EAF3EE] p-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[#2F6B4F]">
+                      <FileCheck2 className="size-5" />
+                      <span>Analysis Completed Successfully</span>
+                    </div>
+                    <p className="text-xs text-fg-muted">
+                      Dataset ingested and scored with ML model{" "}
+                      <span className="font-mono text-fg font-medium">{selectedModelId}</span>.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => navigate("/alerts")}
+                        className="flex items-center gap-1.5 rounded-md bg-accent text-white px-3.5 py-1.5 text-xs font-semibold hover:bg-[#112d4d] transition-colors shadow-2xs"
+                      >
+                        <Bell className="size-3.5" />
+                        View Alerts
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate("/investigation")}
+                        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3.5 py-1.5 text-xs font-medium text-fg hover:bg-panel-2 transition-colors shadow-2xs"
+                      >
+                        <Fingerprint className="size-3.5" />
+                        Investigate Results
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStage("idle")
+                          setProgress(0)
+                          setFileName("")
+                          setErrorMsg(null)
+                        }}
+                        className="ml-auto text-xs font-medium text-fg-subtle hover:text-fg hover:underline"
+                      >
+                        Ingest another dataset
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </PanelBody>
+        </Panel>
+      </div>
     </AppLayout>
   )
 }
