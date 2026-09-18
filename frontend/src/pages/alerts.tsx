@@ -5,7 +5,7 @@ import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelHeader } from "@/components/ui/panel"
 import { AlertTable } from "@/components/alert-table"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
-import { getAlerts } from "@/data/service"
+import { getAlerts, updateAlert } from "@/data/service"
 import type { Alert, AlertStatus, EntityType, Severity } from "@/data/types"
 import { cn } from "@/lib/utils"
 
@@ -13,7 +13,8 @@ const severities: (Severity | "all")[] = ["all", "critical", "high", "medium", "
 const statuses: (AlertStatus | "all")[] = [
   "all",
   "new",
-  "reviewing",
+  "acknowledged",
+  "investigating",
   "escalated",
   "resolved",
   "dismissed",
@@ -55,6 +56,20 @@ export function AlertsPage() {
         setErrorMsg(err instanceof Error ? err.message : "Failed to load alerts from backend")
         setLoading(false)
       })
+  }
+
+  async function handleStatusChange(alertId: string, newStatus: AlertStatus) {
+    try {
+      setAlerts((prev) =>
+        prev
+          ? prev.map((a) => (a.id === alertId ? { ...a, status: newStatus } : a))
+          : prev,
+      )
+      await updateAlert(alertId, newStatus)
+    } catch (err) {
+      console.error("Failed to update alert status:", err)
+      loadAlerts()
+    }
   }
 
   useEffect(() => {
@@ -172,7 +187,7 @@ export function AlertsPage() {
               icon={<Bell className="size-4" />}
             />
             {filtered.length ? (
-              <AlertTable alerts={filtered} />
+              <AlertTable alerts={filtered} onStatusChange={handleStatusChange} />
             ) : (
               <EmptyState
                 title="No alerts match your filter criteria"

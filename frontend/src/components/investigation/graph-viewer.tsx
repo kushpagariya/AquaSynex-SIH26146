@@ -11,6 +11,7 @@ const typeColor: Record<EntityType, string> = {
   network: "#A46A16", // muted amber
   exchange: "#2F6B4F", // muted green
   mixer: "#A63D3D", // muted red
+  cluster: "#6366F1", // indigo
 }
 
 const severityColor: Record<Severity, string> = {

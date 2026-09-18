@@ -6,6 +6,7 @@ import duckdb
 from backend.db.connection import get_db_connection
 from backend.services.address_service import AddressService
 from backend.services.analysis_service import AnalysisService
+from backend.services.alert_service import AlertService
 from backend.services.dataset_service import DatasetService
 from backend.services.graph_service import GraphService
 from backend.services.result_service import ResultService
@@ -40,3 +41,8 @@ def get_graph_service(db: duckdb.DuckDBPyConnection = Depends(get_db)) -> GraphS
 
 def get_result_service(db: duckdb.DuckDBPyConnection = Depends(get_db)) -> ResultService:
     return ResultService(db)
+
+
+def get_alert_service(db: duckdb.DuckDBPyConnection = Depends(get_db)) -> AlertService:
+    return AlertService(db)
+

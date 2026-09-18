@@ -1,21 +1,23 @@
 import { useNavigate } from "react-router-dom"
 import { ChevronRight } from "lucide-react"
-import type { Alert } from "@/data/types"
+import type { Alert, AlertStatus } from "@/data/types"
 import {
+  AlertTypeBadge,
   EntityTypeBadge,
   SeverityBadge,
   StatusBadge,
   severityColorVar,
 } from "@/components/ui/badges"
-import { MonoId } from "@/components/ui/mono-id"
 import { formatTime } from "@/lib/utils"
 
 export function AlertTable({
   alerts,
   compact = false,
+  onStatusChange,
 }: {
   alerts: Alert[]
   compact?: boolean
+  onStatusChange?: (alertId: string, newStatus: AlertStatus) => void
 }) {
   const navigate = useNavigate()
 
@@ -25,10 +27,11 @@ export function AlertTable({
         <thead>
           <tr className="border-b border-line bg-panel-2/60 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle select-none">
             <th className="px-5 py-3 font-sans">Entity / TXID</th>
+            {!compact ? <th className="px-4 py-3 font-sans">Type</th> : null}
             <th className="px-4 py-3 font-sans">Risk</th>
             <th className="px-4 py-3 font-sans">Severity</th>
             {!compact ? (
-              <th className="px-4 py-3 font-sans">Behavior</th>
+              <th className="px-4 py-3 font-sans">Reason / Typology</th>
             ) : null}
             <th className="px-4 py-3 font-sans">Time</th>
             {!compact ? (
@@ -45,13 +48,18 @@ export function AlertTable({
               className="group cursor-pointer transition-colors hover:bg-accent-soft/30"
             >
               <td className="px-5 py-3.5">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-medium text-fg">
                     {a.entityLabel.length > 20 ? `${a.entityLabel.slice(0, 16)}…` : a.entityLabel}
                   </span>
                   <EntityTypeBadge type={a.entityType} />
                 </div>
               </td>
+              {!compact ? (
+                <td className="px-4 py-3.5 whitespace-nowrap">
+                  <AlertTypeBadge type={a.alertType} />
+                </td>
+              ) : null}
               <td className="px-4 py-3.5">
                 <span
                   className="font-mono font-bold tabular-nums text-xs"
@@ -72,8 +80,23 @@ export function AlertTable({
                 {formatTime(a.timestamp)}
               </td>
               {!compact ? (
-                <td className="px-4 py-3.5">
-                  <StatusBadge status={a.status} />
+                <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                  {onStatusChange ? (
+                    <select
+                      value={a.status}
+                      onChange={(e) => onStatusChange(a.id, e.target.value as AlertStatus)}
+                      className="rounded border border-line bg-panel px-2 py-0.5 text-[11px] font-medium text-fg uppercase tracking-wider focus:border-accent focus:outline-none cursor-pointer"
+                    >
+                      <option value="new">New</option>
+                      <option value="acknowledged">Acknowledged</option>
+                      <option value="investigating">Investigating</option>
+                      <option value="escalated">Escalated</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="dismissed">Dismissed</option>
+                    </select>
+                  ) : (
+                    <StatusBadge status={a.status} />
+                  )}
                 </td>
               ) : null}
               <td className="px-4 py-3.5 text-right">

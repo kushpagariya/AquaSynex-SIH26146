@@ -255,3 +255,39 @@ export interface HealthResponse {
   uptime?: number
   timestamp?: string
 }
+
+export interface AlertDTO {
+  alertId: string
+  analysisId: string
+  datasetId: string
+  fingerprint: string
+  groupingKey: string
+  transactionId?: string | null
+  entityId: string
+  entityType: string
+  alertType: string
+  severity: string
+  priority: string
+  riskScore: number
+  behaviorType?: string | null
+  triggerSource: string
+  triggerReason: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  firstSeenAt?: string | null
+  lastSeenAt?: string | null
+  acknowledgedAt?: string | null
+  resolvedAt?: string | null
+  assignedTo?: string | null
+  metadataJson?: Record<string, unknown> | null
+}
+
+export interface AlertsSummaryDTO {
+  total: number
+  active: number
+  bySeverity: Record<string, number>
+  byStatus: Record<string, number>
+  byType: Record<string, number>
+}
+

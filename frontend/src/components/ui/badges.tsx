@@ -94,7 +94,9 @@ export function RiskScore({
 
 const statusStyles: Record<AlertStatus, string> = {
   new: "text-accent bg-accent-soft border-accent/20",
+  acknowledged: "text-[#2B6CB0] bg-[#EBF8FF] border-[#BEE3F8]",
   reviewing: "text-[#A46A16] bg-[#FDF6E2] border-[#F2DF99]",
+  investigating: "text-[#7C3AED] bg-[#F5F3FF] border-[#DDD6FE]",
   escalated: "text-[#B85D1B] bg-[#FDF0E6] border-[#F6CCA9]",
   resolved: "text-[#2F6B4F] bg-[#EAF3EE] border-[#C5DECF]",
   dismissed: "text-fg-subtle bg-panel-2 border-line",
@@ -111,11 +113,32 @@ export function StatusBadge({
     <span
       className={cn(
         "inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider capitalize",
-        statusStyles[status],
+        statusStyles[status] || statusStyles.new,
         className,
       )}
     >
       {status}
+    </span>
+  )
+}
+
+export function AlertTypeBadge({
+  type,
+  className,
+}: {
+  type?: string
+  className?: string
+}) {
+  if (!type) return null
+  const formatted = type.replace(/_/g, " ")
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded border border-line bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] font-medium text-fg-muted uppercase tracking-wider",
+        className,
+      )}
+    >
+      {formatted}
     </span>
   )
 }
@@ -127,6 +150,7 @@ const entityStyles: Record<EntityType, string> = {
   mixer: "text-[#A63D3D] bg-[#FDF0F0] border-[#F4BCBC]",
   ip: "text-[#A46A16] bg-[#FDF6E2] border-[#F2DF99]",
   network: "text-[#60758C] bg-panel-2 border-line",
+  cluster: "text-[#4338CA] bg-[#EEF2FF] border-[#C7D2FE]",
 }
 
 export function EntityTypeBadge({

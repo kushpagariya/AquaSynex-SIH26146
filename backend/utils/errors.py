@@ -95,6 +95,16 @@ class ResultNotFoundError(AppError):
         )
 
 
+class AlertNotFoundError(AppError):
+    def __init__(self, alert_id: str):
+        super().__init__(
+            "ALERT_NOT_FOUND",
+            f"Alert '{alert_id}' not found",
+            404,
+            {"alertId": alert_id},
+        )
+
+
 # Dataset / Pipeline Errors
 class DatasetError(AppError):
     def __init__(self, message: str = "Dataset cannot be processed", details: Optional[Dict[str, Any]] = None):
