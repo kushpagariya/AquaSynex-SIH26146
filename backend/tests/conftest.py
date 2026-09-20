@@ -36,7 +36,7 @@ def db() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     conn = duckdb.connect(database=settings.DB_PATH)
     run_migrations(conn)
     # Clean tables between tests
-    for tbl in ["ml_results", "analysis_runs", "addresses", "transaction_outputs", "transaction_inputs", "transactions", "datasets"]:
+    for tbl in ["alerts", "ml_results", "analysis_runs", "addresses", "transaction_outputs", "transaction_inputs", "transactions", "datasets"]:
         try:
             conn.execute(f"DELETE FROM {tbl}")
         except Exception:

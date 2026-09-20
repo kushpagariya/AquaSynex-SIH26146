@@ -8,9 +8,16 @@
 
 export type Severity = "low" | "medium" | "high" | "critical"
 
-export type AlertStatus = "new" | "reviewing" | "escalated" | "resolved" | "dismissed"
+export type AlertStatus =
+  | "new"
+  | "acknowledged"
+  | "investigating"
+  | "reviewing"
+  | "escalated"
+  | "resolved"
+  | "dismissed"
 
-export type EntityType = "wallet" | "transaction" | "ip" | "network" | "exchange" | "mixer"
+export type EntityType = "wallet" | "transaction" | "ip" | "network" | "exchange" | "mixer" | "cluster"
 
 export type DatasetStage = "idle" | "uploading" | "processing" | "completed" | "failed"
 
@@ -66,11 +73,17 @@ export interface Alert {
   entityId: string
   entityLabel: string
   entityType: EntityType
+  alertType?: string
   riskScore: number
   severity: Severity
+  priority?: string
+  behaviorType?: string
+  triggerSource?: string
+  transactionId?: string
   reason: string
   timestamp: string
   status: AlertStatus
+  metadata?: Record<string, unknown>
 }
 
 export interface TxIO {

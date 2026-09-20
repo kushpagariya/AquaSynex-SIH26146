@@ -19,9 +19,13 @@ import {
   listTransactions,
   uploadDataset as apiUploadDataset,
   triggerAnalysis as apiTriggerAnalysis,
+  listAlerts,
+  getAlertsSummary,
+  updateAlertStatus as apiUpdateAlertStatus,
 } from "@/api"
 import type {
   Alert,
+  AlertStatus,
   AnomalyBucket,
   BehaviorAnalyticsItem,
   BehaviorTypology,
@@ -141,10 +145,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     }
   }
 
-  const [datasetDetail, addrList, analysisDetail] = await Promise.all([
+  const [datasetDetail, addrList, analysisDetail, alertSummary] = await Promise.all([
     getDataset(datasetId).catch(() => null),
     listAddresses(datasetId, { page: 1, pageSize: 1, analysisId }).catch(() => null),
     analysisId ? getAnalysis(analysisId).catch(() => null) : Promise.resolve(null),
+    analysisId ? getAlertsSummary(analysisId, datasetId).catch(() => null) : Promise.resolve(null),
   ])
 
   let totalEntities =
@@ -154,8 +159,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     0
   let highRisk = analysisDetail?.highRiskCount || 0
   let criticalRisk = analysisDetail?.criticalRiskCount || 0
-  let activeAlerts = highRisk + criticalRisk
-  let anomaliesDetected = activeAlerts
+  let highRiskEntities = highRisk + criticalRisk
+  let activeAlerts = alertSummary ? alertSummary.active : highRisk + criticalRisk
+  let anomaliesDetected = alertSummary ? alertSummary.total : activeAlerts
   let lastProcessed = analysisDetail?.completedAt || datasetDetail?.uploadedAt || undefined
 
   const isCompleted = analysisDetail?.status === "completed" || datasetDetail?.status === "ready"
@@ -224,7 +230,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalTransactions: datasetDetail?.canonicalTxCount || datasetDetail?.rowCount || 0,
     totalEntities,
     suspiciousEntities: highRisk,
-    highRiskEntities: highRisk + criticalRisk,
+    highRiskEntities,
     activeAlerts,
     anomaliesDetected,
     lastProcessed,
@@ -235,12 +241,63 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 }
 
 /**
- * Retrieves high/critical risk predictions from the active analysis run as actionable alerts.
+ * Retrieves alerts from the dedicated DuckDB alerts table, with fallback to ML results.
  */
-export async function getAlerts(): Promise<Alert[]> {
-  const { analysisId } = await getActiveContext()
+export async function getAlerts(params?: {
+  status?: string
+  severity?: string
+  alertType?: string
+  priority?: string
+  minRiskScore?: number
+  search?: string
+}): Promise<Alert[]> {
+  const { analysisId, datasetId } = await getActiveContext()
   if (!analysisId) return []
 
+  try {
+    const alertsRes = await listAlerts({
+      analysisId,
+      datasetId,
+      status: params?.status,
+      severity: params?.severity,
+      alertType: params?.alertType,
+      priority: params?.priority,
+      minRiskScore: params?.minRiskScore,
+      search: params?.search,
+      page: 1,
+      pageSize: 100,
+      sortBy: "riskScore",
+      sortDir: "desc",
+    })
+
+    const items = alertsRes.data || []
+    if (items.length > 0) {
+      return items.map((a) => ({
+        id: a.alertId,
+        entityId: a.entityId,
+        entityLabel:
+          a.entityId.length > 16
+            ? `${a.entityId.slice(0, 8)}…${a.entityId.slice(-6)}`
+            : a.entityId,
+        entityType: (a.entityType === "address" ? "wallet" : a.entityType) as EntityType,
+        alertType: a.alertType,
+        riskScore: Math.round(a.riskScore * 100),
+        severity: (a.severity?.toLowerCase() as Severity) || "low",
+        priority: a.priority,
+        behaviorType: a.behaviorType || undefined,
+        triggerSource: a.triggerSource,
+        transactionId: a.transactionId || undefined,
+        reason: a.triggerReason,
+        timestamp: a.createdAt,
+        status: (a.status?.toLowerCase() as AlertStatus) || "new",
+        metadata: (a.metadataJson as Record<string, unknown>) || undefined,
+      }))
+    }
+  } catch (err) {
+    console.warn("Failed to fetch alerts from real DuckDB alerts table, falling back to ML results:", err)
+  }
+
+  // Fallback: list from ML results if alerts have not yet been backfilled
   const resultsRes = await listAnalysisResults(analysisId, {
     page: 1,
     pageSize: 100,
@@ -265,6 +322,33 @@ export async function getAlerts(): Promise<Alert[]> {
     timestamp: r.predictedAt,
     status: "new",
   }))
+}
+
+/**
+ * Updates persistent alert status in DuckDB.
+ */
+export async function updateAlert(alertId: string, status: string): Promise<Alert> {
+  const updated = await apiUpdateAlertStatus(alertId, status)
+  return {
+    id: updated.alertId,
+    entityId: updated.entityId,
+    entityLabel:
+      updated.entityId.length > 16
+        ? `${updated.entityId.slice(0, 8)}…${updated.entityId.slice(-6)}`
+        : updated.entityId,
+    entityType: (updated.entityType === "address" ? "wallet" : updated.entityType) as EntityType,
+    alertType: updated.alertType,
+    riskScore: Math.round(updated.riskScore * 100),
+    severity: (updated.severity?.toLowerCase() as Severity) || "low",
+    priority: updated.priority,
+    behaviorType: updated.behaviorType || undefined,
+    triggerSource: updated.triggerSource,
+    transactionId: updated.transactionId || undefined,
+    reason: updated.triggerReason,
+    timestamp: updated.createdAt,
+    status: (updated.status?.toLowerCase() as AlertStatus) || "new",
+    metadata: (updated.metadataJson as Record<string, unknown>) || undefined,
+  }
 }
 
 /**
