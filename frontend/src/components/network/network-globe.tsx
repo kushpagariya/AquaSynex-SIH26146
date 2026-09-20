@@ -264,31 +264,42 @@ export function NetworkGlobe({
       const isOutgoing = selectedIp ? outgoingEdgeMap.has(pt.ip) : false
       const isConnected = isIncoming || isOutgoing
 
-      // Bounded radius scaled by event volume (never consumes screen)
-      const baseRadius = Math.min(0.7, Math.max(0.25, Math.log2(pt.eventCount + 1) * 0.08))
-      const radius = isSelected ? baseRadius * 1.8 : isConnected ? baseRadius * 1.3 : baseRadius
+      // Base radius scaled by event volume - high-visibility native markers
+      const baseRadius = Math.min(0.85, Math.max(0.42, Math.log2(pt.eventCount + 1) * 0.12))
 
       let color = "#38bdf8"
-      let altitude = 0.015
+      let radius = baseRadius
+      let altitude = 0.018
 
       if (isSelected) {
-        color = "#ffffff"
-        altitude = 0.04
+        // Selected IP: Prominent amber/gold beacon
+        color = "#f59e0b"
+        radius = baseRadius * 2.2
+        altitude = 0.045
       } else if (selectedIp) {
         if (isIncoming) {
-          color = "#34d399" // Emerald green for incoming source
-          altitude = 0.025
+          // Connected incoming: Emerald green
+          color = "#10b981"
+          radius = baseRadius * 1.5
+          altitude = 0.028
         } else if (isOutgoing) {
-          color = "#60a5fa" // Sky blue for outgoing destination
-          altitude = 0.025
+          // Connected outgoing: Vivid sky blue
+          color = "#0ea5e9"
+          radius = baseRadius * 1.5
+          altitude = 0.028
         } else {
-          // Unrelated endpoint subdued
-          color = "rgba(100, 116, 139, 0.25)"
-          altitude = 0.008
+          // All other mapped endpoints REMAIN VISIBLE on realistic Earth
+          // Crisp, solid light-slate (#e2e8f0) with full opacity
+          color = "#e2e8f0"
+          radius = baseRadius * 0.95
+          altitude = 0.016
         }
       } else {
-        // Global view: higher traffic endpoints slightly brighter
-        color = pt.eventCount > 20 ? "#38bdf8" : "#2563eb"
+        // Global overview (no IP selected):
+        // All 98 endpoints clearly rendered in high-contrast cyan
+        color = pt.eventCount > 20 ? "#7dd3fc" : "#38bdf8"
+        radius = baseRadius * 1.1
+        altitude = 0.02
       }
 
       return {
@@ -451,11 +462,11 @@ export function NetworkGlobe({
         ref={globeRef as any}
         width={dimensions.width}
         height={dimensions.height}
-        globeImageUrl="/textures/earth-night.jpg"
+        globeImageUrl="/textures/earth-blue-marble.jpg"
         backgroundColor="#030712"
         showAtmosphere={true}
-        atmosphereColor="#38bdf8"
-        atmosphereAltitude={0.15}
+        atmosphereColor="#bfdbfe"
+        atmosphereAltitude={0.09}
         onGlobeReady={handleGlobeReady}
         // Points layer
         pointsData={pointsData}
@@ -524,10 +535,10 @@ export function NetworkGlobe({
             Directional Traffic:
           </span>
           <span className="flex items-center gap-1 font-medium">
-            <span className="size-2 rounded-full bg-[#34d399] inline-block shadow-sm" /> Incoming (Emerald Dashed)
+            <span className="size-2 rounded-full bg-[#34d399] inline-block shadow-sm" /> Incoming
           </span>
           <span className="flex items-center gap-1 font-medium">
-            <span className="size-2 rounded-full bg-[#38bdf8] inline-block shadow-sm" /> Outgoing (Sky Solid)
+            <span className="size-2 rounded-full bg-[#38bdf8] inline-block shadow-sm" /> Outgoing
           </span>
         </div>
       )}
