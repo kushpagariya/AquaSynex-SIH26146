@@ -162,8 +162,8 @@ export function DatasetPage() {
   const graphLinkCount = totalTxCount
 
   // Persisted ML Risk counts from authoritative analysis run
-  const criticalCount = existing?.criticalRiskCount ?? 61
-  const highCount = existing?.highRiskCount ?? 12
+  const criticalCount = existing?.criticalRiskCount ?? 0
+  const highCount = existing?.highRiskCount ?? 0
   const lowerCount = existing?.lowerRiskCount ?? Math.max(0, totalTxCount - criticalCount - highCount)
   const totalHighOrCritical = criticalCount + highCount
 
@@ -358,7 +358,7 @@ export function DatasetPage() {
                   <ShieldCheck className="size-4 text-[#2F6B4F]" />
                   <span className="font-semibold text-fg">Data Integrity:</span>
                   <span className="text-fg-muted font-medium">
-                    100% Valid • 0 missing values • 0 duplicate transaction IDs
+                    100% Valid • {profile?.missingValues ?? 0} missing values • {profile?.duplicateIds ?? 0} duplicate transaction IDs
                   </span>
                 </div>
                 <span className="text-[11px] text-fg-subtle font-mono">

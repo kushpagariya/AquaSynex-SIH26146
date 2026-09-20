@@ -85,6 +85,7 @@ export function AlertTable({
                     <select
                       value={a.status}
                       onChange={(e) => onStatusChange(a.id, e.target.value as AlertStatus)}
+                      aria-label={`Status for alert ${a.id}`}
                       className="rounded border border-line bg-panel px-2 py-0.5 text-[11px] font-medium text-fg uppercase tracking-wider focus:border-accent focus:outline-none cursor-pointer"
                     >
                       <option value="new">New</option>

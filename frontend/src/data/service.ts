@@ -1390,7 +1390,12 @@ export async function getTransactionsDetailed(
   let filtered = enrichedTransactions
   if (params.searchTxid) {
     const q = params.searchTxid.toLowerCase()
-    filtered = filtered.filter((t) => t.txid.toLowerCase().includes(q))
+    filtered = filtered.filter(
+      (t) =>
+        t.txid.toLowerCase().includes(q) ||
+        t.inputs?.some((i) => i.address.toLowerCase().includes(q)) ||
+        t.outputs?.some((o) => o.address.toLowerCase().includes(q)),
+    )
   }
   if (params.behavior && params.behavior !== "all") {
     filtered = filtered.filter((t) => t.behaviorType === params.behavior)
@@ -2107,11 +2112,10 @@ export async function getDatasetProfile(datasetIdOverride?: string): Promise<Dat
   if (!targetId) return null
 
   try {
-    const [info, addrsRes, txSampleRes, graphRes, analysisList] = await Promise.all([
+    const [info, addrsRes, txSampleRes, analysisList] = await Promise.all([
       getDatasetInfo(targetId),
       listAddresses(targetId, { page: 1, pageSize: 1 }).catch(() => null),
       listTransactions(targetId, { page: 1, pageSize: 200 }).catch(() => null),
-      getAnalysisGraph(targetId).catch(() => null),
       listAnalysesForDataset(targetId).catch(() => []),
     ])
 
@@ -2119,9 +2123,15 @@ export async function getDatasetProfile(datasetIdOverride?: string): Promise<Dat
 
     const activeAnalysis = analysisList.find((a) => a.status === "completed") || analysisList[0]
     let results: import("@/api").MLResultSummary[] = []
+    let graphRes: import("@/api").GraphExport | null = null
+
     if (activeAnalysis) {
-      const res = await listAnalysisResults(activeAnalysis.analysisId, { page: 1, pageSize: 500 }).catch(() => null)
-      results = res?.data || []
+      const [resultsRes, graph] = await Promise.all([
+        listAnalysisResults(activeAnalysis.analysisId, { page: 1, pageSize: 500 }).catch(() => null),
+        getAnalysisGraph(activeAnalysis.analysisId).catch(() => null),
+      ])
+      results = resultsRes?.data || []
+      graphRes = graph
     }
 
     const txs = txSampleRes?.data || []
@@ -2129,7 +2139,17 @@ export async function getDatasetProfile(datasetIdOverride?: string): Promise<Dat
     const totalAddrs = info.stats?.addresses || addrsRes?.meta?.pagination?.totalItems || 0
 
     const countries = new Set<string>()
-    const asns = new Set<number>()
+    const asns = new Set<number | string>()
+
+    for (const tx of txs as any[]) {
+      if (Array.isArray(tx.networkEvents)) {
+        for (const ne of tx.networkEvents) {
+          if (ne.country) countries.add(ne.country)
+          if (ne.asn != null) asns.add(ne.asn)
+        }
+      }
+    }
+
     const behaviorCounts: Record<string, number> = {}
     for (const b of BEHAVIOR_TYPOLOGIES) behaviorCounts[b] = 0
 
@@ -2157,8 +2177,8 @@ export async function getDatasetProfile(datasetIdOverride?: string): Promise<Dat
         to: info.stats?.dateRange?.to || "",
         span: info.stats?.span || "—",
       },
-      countryCount: Math.max(1, countries.size || 6),
-      asnCount: Math.max(1, asns.size || 8),
+      countryCount: countries.size,
+      asnCount: asns.size,
       suspiciousPercentage,
       missingValues: 0,
       duplicateIds: 0,
@@ -2166,7 +2186,7 @@ export async function getDatasetProfile(datasetIdOverride?: string): Promise<Dat
       graphCoverage: {
         nodeCount: graphRes?.nodeCount || totalAddrs,
         edgeCount: graphRes?.edgeCount || totalTx,
-        isCovered: true,
+        isCovered: Boolean(graphRes),
       },
       scoringStatus: {
         scoredCount: results.length,

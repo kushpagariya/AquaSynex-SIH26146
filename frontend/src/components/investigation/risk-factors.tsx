@@ -16,11 +16,7 @@ export function RiskFactors({ risk }: { risk: RiskProfile }) {
           // SHAP feature contribution:
           // Weight > 0 contributes to risk (suspicious: muted red #A63D3D)
           // Weight < 0 decreases risk (mitigating / normal: muted slate/blue #60758C)
-          const isMitigating =
-            factor.id.includes("normal") ||
-            factor.id.includes("benign") ||
-            factor.id.includes("negative") ||
-            factor.weight < 0
+          const isMitigating = factor.weight < 0
           const barColor = isMitigating ? "#60758C" : "#A63D3D"
           const pct = Math.min(Math.round(Math.abs(factor.weight) * 100), 100)
 

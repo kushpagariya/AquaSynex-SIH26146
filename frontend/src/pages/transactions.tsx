@@ -37,7 +37,7 @@ export function TransactionsPage() {
 
   const initialBehavior = searchParams.get("behavior") || "all"
   const initialSeverity = (searchParams.get("severity") as Severity) || "all"
-  const initialSearch = searchParams.get("txid") || ""
+  const initialSearch = searchParams.get("txid") || searchParams.get("address") || ""
 
   const [data, setData] = useState<FilteredTransactionsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -92,8 +92,11 @@ export function TransactionsPage() {
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setPage(1)
-    loadTransactions()
+    if (page !== 1) {
+      setPage(1)
+    } else {
+      loadTransactions()
+    }
   }
 
   function handleResetFilters() {

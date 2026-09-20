@@ -327,7 +327,6 @@ export function GraphExplorerPage() {
 
     const validNodeIds = new Set<string>()
     const nodes: ElementDefinition[] = []
-    const focusedId = searchQuery.trim() || focusParam || selectedNode?.id || ""
 
     for (const n of rawGraph.nodes) {
       const nType = (n.nodeType || "address").toLowerCase()
@@ -335,13 +334,11 @@ export function GraphExplorerPage() {
       const score = n.riskScore ?? 0
 
       // Enforce high-risk filter if active (risk_score >= 0.50 or high/critical)
-      if (suspiciousOnly && score < 0.50 && lvl !== "high" && lvl !== "critical" && n.id !== focusedId) {
+      if (suspiciousOnly && score < 0.50 && lvl !== "high" && lvl !== "critical") {
         continue
       }
 
       validNodeIds.add(n.id)
-      const isFocused = Boolean(focusedId && n.id.toLowerCase() === focusedId.toLowerCase())
-      const isSelected = Boolean(selectedNode && n.id.toLowerCase() === selectedNode.id.toLowerCase())
       const isHighRisk = lvl === "high" || lvl === "critical" || score >= 0.50
 
       // Color mapping with restrained semantic emphasis
@@ -354,11 +351,7 @@ export function GraphExplorerPage() {
         nodeColor = severityColors.medium
       }
 
-      // Show labels primarily for selected node, focused node, or high-risk entities
-      const displayLabel =
-        isFocused || isSelected || isHighRisk || rawGraph.nodes.length <= 15
-          ? n.label || `${n.id.slice(0, 8)}…`
-          : ""
+      const displayLabel = n.label || `${n.id.slice(0, 8)}…`
 
       nodes.push({
         data: {
@@ -369,8 +362,8 @@ export function GraphExplorerPage() {
           riskLevel: n.riskLevel,
           color: nodeColor,
           shape: nType === "transaction" ? "round-rectangle" : nType === "cluster" ? "hexagon" : "ellipse",
-          isFocus: isFocused ? 1 : 0,
-          isSelected: isSelected ? 1 : 0,
+          isFocus: 0,
+          isSelected: 0,
         },
       })
     }
@@ -396,7 +389,7 @@ export function GraphExplorerPage() {
     }
 
     return [...nodes, ...edges]
-  }, [rawGraph, suspiciousOnly, searchQuery, focusParam, selectedNode])
+  }, [rawGraph, suspiciousOnly])
 
   // Initialize and update Cytoscape canvas
   useEffect(() => {
@@ -427,7 +420,7 @@ export function GraphExplorerPage() {
           },
         },
         {
-          selector: "node[isFocus = 1]",
+          selector: "node[isFocus = 1], node.focused",
           style: {
             width: 44,
             height: 44,
@@ -438,7 +431,7 @@ export function GraphExplorerPage() {
           },
         },
         {
-          selector: "node[isSelected = 1]",
+          selector: "node[isSelected = 1], node.selected",
           style: {
             "border-width": 3,
             "border-color": "#173B63",
@@ -564,6 +557,39 @@ export function GraphExplorerPage() {
       cyRef.current = null
     }
   }, [elements, rawGraph])
+
+  // Dynamically update focus and selection styling without recreating Cytoscape
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy || cy.destroyed()) return
+
+    const focusedId = (searchQuery.trim() || focusParam || "").toLowerCase()
+    const selectedId = (selectedNode?.id || "").toLowerCase()
+
+    cy.batch(() => {
+      cy.nodes().forEach((node) => {
+        const nId = node.id().toLowerCase()
+        const isF = Boolean(focusedId && nId === focusedId)
+        const isS = Boolean(selectedId && nId === selectedId)
+
+        if (isF) {
+          node.addClass("focused")
+          node.data("isFocus", 1)
+        } else {
+          node.removeClass("focused")
+          node.data("isFocus", 0)
+        }
+
+        if (isS) {
+          node.addClass("selected")
+          node.data("isSelected", 1)
+        } else {
+          node.removeClass("selected")
+          node.data("isSelected", 0)
+        }
+      })
+    })
+  }, [searchQuery, focusParam, selectedNode])
 
   function zoomBy(factor: number) {
     const cy = cyRef.current

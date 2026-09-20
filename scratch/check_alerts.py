@@ -20,7 +20,7 @@ print(f"Alerts directly for dataset {ds_id}: {len(alerts_for_ds)}")
 matched_alerts = conn.execute("""
     SELECT a.alert_id, a.alert_type, a.severity, a.priority, a.status, a.entity_id, a.transaction_id
     FROM alerts a
-    JOIN transactions t ON a.transaction_id = t.transaction_id OR a.entity_id = t.transaction_id
+    JOIN transactions t ON a.dataset_id = t.dataset_id AND (a.transaction_id = t.transaction_id OR a.entity_id = t.transaction_id)
     WHERE t.dataset_id = ?
 """, [ds_id]).fetchall()
 print(f"Alerts matching transactions in dataset: {len(matched_alerts)}")
@@ -29,7 +29,7 @@ print(f"Alerts matching transactions in dataset: {len(matched_alerts)}")
 match_summary = conn.execute("""
     SELECT t.dataset_id, count(distinct a.alert_id)
     FROM alerts a
-    JOIN transactions t ON a.transaction_id = t.transaction_id OR a.entity_id = t.transaction_id
+    JOIN transactions t ON a.dataset_id = t.dataset_id AND (a.transaction_id = t.transaction_id OR a.entity_id = t.transaction_id)
     GROUP BY t.dataset_id
 """).fetchall()
 print("Alert matches by dataset:")

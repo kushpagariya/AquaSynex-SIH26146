@@ -235,9 +235,10 @@ class AlertEngine:
                 trigger_reason = signals[0]["reason"]
 
             # Determine grouping key
-            # 1. Cluster grouping: if cluster size >= 3, group by cluster
-            if cluster_size >= 3:
-                grouping_key = f"cluster:{cluster_size}_{cluster_txs}"
+            # 1. Cluster grouping: if cluster size >= 3 and cluster ID present, group by cluster ID
+            cluster_id = features_map.get("hist_cluster_id") or features_map.get("cluster_id")
+            if cluster_size >= 3 and cluster_id:
+                grouping_key = str(cluster_id)
             elif alert_type == "TEMPORAL_BURST":
                 # Group by 5-minute bucket and behavior
                 epoch_sec = int(tx_timestamp.timestamp()) if hasattr(tx_timestamp, "timestamp") else 0

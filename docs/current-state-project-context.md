@@ -79,7 +79,7 @@ Reconstructed directly from active repository code, the system comprises six int
 │  - FastAPI REST Application (uvicorn backend.main:app, Python 3.11-slim)        │
 │  - Pydantic Settings & Request/Response Validation Envelopes                     │
 │  - Lifespan Manager: DuckDB connection initialization & migration runner         │
-│  - Routers: /health, /datasets, /analyses, /transactions, /addresses, /graph     │
+│  - Routers: /health, /datasets, /analyses, /transactions, /addresses, /graph, /alerts, /models │
 │  - BackgroundTasks: Asynchronous analysis execution worker                       │
 └───────────────────┬───────────────────────────────┬──────────────────────────────┘
                     │                               │
@@ -91,7 +91,7 @@ Reconstructed directly from active repository code, the system comprises six int
 │         (Named Volume: /app/data)      │ │           (pipeline/ml, ml/)          │
 │  - DuckDB Engine (aquasynex.db)        │ │  - Ingestion, Cleaning, Normalization │
 │  - RLock Thread-Safe Cursor Proxy      │ │  - 46-Feature Extraction Pipeline     │
-│  - 8 Relational Tables (ACID)          │ │  - GraphFeatureExtractor & UnionFind  │
+│  - 9 Relational Tables (ACID)          │ │  - GraphFeatureExtractor & UnionFind  │
 │  - Raw uploaded CSV/Parquet archives   │ │  - Preprocessor (RobustScaler + OHE)  │
 │  - Dynamic Analytical Scanners         │ │  - XGBoost Binary Model (TreeSHAP)    │
 │    (read_csv_auto, read_parquet)       │ │  - CatBoost 11-Class Typology Model   │
@@ -302,7 +302,7 @@ As formally documented in `docs/decisions/ADR-001-duckdb-selection.md`, **DuckDB
   - Re-entrant thread lock (`threading.RLock`) guards all write executions and cursor allocations.
   - Generational tracking (`_connection_generation`) ensures thread-local cursors are invalidated and safely recreated whenever the database connection is cycled.
 
-### 8.3 Relational Schema (8 Tables)
+### 8.3 Relational Schema (9 Tables)
 ```sql
 -- 1. Datasets Table
 CREATE TABLE datasets (
@@ -444,7 +444,49 @@ CREATE TABLE network_events (
 );
 CREATE INDEX idx_network_events_dataset ON network_events(dataset_id);
 CREATE INDEX idx_network_events_tx ON network_events(transaction_id);
+
+-- 9. Anomaly Alerts Table
+CREATE TABLE alerts (
+    alert_id            VARCHAR PRIMARY KEY,
+    analysis_id         VARCHAR NOT NULL,
+    dataset_id          VARCHAR NOT NULL,
+    fingerprint         VARCHAR NOT NULL,
+    grouping_key        VARCHAR NOT NULL,
+    transaction_id      VARCHAR,
+    entity_id           VARCHAR NOT NULL,
+    entity_type         VARCHAR NOT NULL,
+    alert_type          VARCHAR NOT NULL,
+    severity            VARCHAR NOT NULL,
+    priority            VARCHAR NOT NULL,
+    risk_score          DOUBLE NOT NULL,
+    behavior_type       VARCHAR,
+    trigger_source      VARCHAR NOT NULL,
+    trigger_reason      VARCHAR NOT NULL,
+    status              VARCHAR NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL,
+    updated_at          TIMESTAMPTZ NOT NULL,
+    first_seen_at       TIMESTAMPTZ,
+    last_seen_at        TIMESTAMPTZ,
+    acknowledged_at     TIMESTAMPTZ,
+    resolved_at         TIMESTAMPTZ,
+    assigned_to         VARCHAR,
+    metadata_json       JSON,
+    UNIQUE (analysis_id, fingerprint)
+);
+CREATE INDEX idx_alerts_analysis ON alerts(analysis_id);
+CREATE INDEX idx_alerts_dataset ON alerts(dataset_id);
+CREATE INDEX idx_alerts_status ON alerts(analysis_id, status);
+CREATE INDEX idx_alerts_severity ON alerts(analysis_id, severity);
+CREATE INDEX idx_alerts_type ON alerts(analysis_id, alert_type);
+CREATE INDEX idx_alerts_entity ON alerts(entity_id);
+CREATE INDEX idx_alerts_tx ON alerts(transaction_id);
 ```
+
+#### Alert Subsystem Lifecycle & Evidence Traceability:
+- **Status Progression**: `NEW` $\rightarrow$ `ACKNOWLEDGED` $\rightarrow$ `INVESTIGATING` $\rightarrow$ `RESOLVED` (or `DISMISSED` / `ESCALATED`).
+- **Severity & Priority**: Severity levels `critical`, `high`, `medium`, `low` mapped to operational priorities `P1`, `P2`, `P3`, `P4`.
+- **Generation & Deduplication**: Deterministically generated post-analysis by `AlertEngine` evaluating cross-category anomaly signals (XGBoost ML risk, CatBoost typology, temporal velocity burst, graph topology, network telemetry). Grouped and deduplicated by SHA-256 fingerprint `(analysis_id, alert_type, grouping_key)` with atomic write protection under DuckDB `get_db_lock()`.
+- **Query & Mutation**: Served via `backend/api/alerts.py` (`/api/alerts`, `/api/alerts/summary`, `/api/alerts/{id}/status`, `/api/alerts/{id}/priority`) backed by `AlertService`.
 
 ---
 
@@ -711,10 +753,10 @@ services:
       - aquasynex_data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
-      interval: 5s
-      timeout: 5s
+      interval: 30s
+      timeout: 30s
       retries: 5
-      start_period: 5s
+      start_period: 30s
 
   frontend:
     build:

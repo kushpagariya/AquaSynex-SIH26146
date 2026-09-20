@@ -989,27 +989,47 @@ class GraphService:
               AND i.input_address IN ({addr_ph})
             """
             in_edge_rows = self.conn.execute(in_edge_query, [dataset_id] + tx_list + addr_list).fetchall()
+            in_edges_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
             for src_addr, tgt_tx, val_sat, ts in in_edge_rows:
                 val_sat = val_sat or 0
-                val_btc = satoshi_to_btc_str(val_sat)
-                edges_list.append({
-                    "id": f"{src_addr}→{tgt_tx}",
-                    "source": src_addr,
-                    "target": tgt_tx,
-                    "edgeType": "input",
-                    "totalValueBtc": val_btc,
-                    "totalValueSatoshi": val_sat,
-                    "valueBtc": val_btc,
-                    "valueSatoshi": val_sat,
-                    "transactionCount": 1,
-                    "timestamp": ts.isoformat() if ts else None,
-                    "transactions": [{
+                pair = (src_addr, tgt_tx)
+                ts_iso = ts.isoformat() if ts else None
+                if pair not in in_edges_map:
+                    in_edges_map[pair] = {
+                        "id": f"{src_addr}→{tgt_tx}",
+                        "source": src_addr,
+                        "target": tgt_tx,
+                        "edgeType": "input",
+                        "totalValueSatoshi": val_sat,
+                        "valueSatoshi": val_sat,
+                        "transactionCount": 1,
+                        "timestamp": ts_iso,
+                        "transactions": [{
+                            "transactionId": tgt_tx,
+                            "valueSatoshi": val_sat,
+                            "valueBtc": satoshi_to_btc_str(val_sat),
+                            "timestamp": ts_iso,
+                        }],
+                    }
+                else:
+                    rec = in_edges_map[pair]
+                    rec["totalValueSatoshi"] += val_sat
+                    rec["valueSatoshi"] += val_sat
+                    rec["transactionCount"] += 1
+                    if ts_iso and not rec["timestamp"]:
+                        rec["timestamp"] = ts_iso
+                    rec["transactions"].append({
                         "transactionId": tgt_tx,
                         "valueSatoshi": val_sat,
-                        "valueBtc": val_btc,
-                        "timestamp": ts.isoformat() if ts else None,
-                    }],
-                })
+                        "valueBtc": satoshi_to_btc_str(val_sat),
+                        "timestamp": ts_iso,
+                    })
+
+            for rec in in_edges_map.values():
+                val_btc = satoshi_to_btc_str(rec["totalValueSatoshi"])
+                rec["totalValueBtc"] = val_btc
+                rec["valueBtc"] = val_btc
+                edges_list.append(rec)
 
             # Output edges: transaction -> address
             out_edge_query = f"""
@@ -1021,27 +1041,47 @@ class GraphService:
               AND o.output_address IN ({addr_ph})
             """
             out_edge_rows = self.conn.execute(out_edge_query, [dataset_id] + tx_list + addr_list).fetchall()
+            out_edges_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
             for src_tx, tgt_addr, val_sat, ts in out_edge_rows:
                 val_sat = val_sat or 0
-                val_btc = satoshi_to_btc_str(val_sat)
-                edges_list.append({
-                    "id": f"{src_tx}→{tgt_addr}",
-                    "source": src_tx,
-                    "target": tgt_addr,
-                    "edgeType": "output",
-                    "totalValueBtc": val_btc,
-                    "totalValueSatoshi": val_sat,
-                    "valueBtc": val_btc,
-                    "valueSatoshi": val_sat,
-                    "transactionCount": 1,
-                    "timestamp": ts.isoformat() if ts else None,
-                    "transactions": [{
+                pair = (src_tx, tgt_addr)
+                ts_iso = ts.isoformat() if ts else None
+                if pair not in out_edges_map:
+                    out_edges_map[pair] = {
+                        "id": f"{src_tx}→{tgt_addr}",
+                        "source": src_tx,
+                        "target": tgt_addr,
+                        "edgeType": "output",
+                        "totalValueSatoshi": val_sat,
+                        "valueSatoshi": val_sat,
+                        "transactionCount": 1,
+                        "timestamp": ts_iso,
+                        "transactions": [{
+                            "transactionId": src_tx,
+                            "valueSatoshi": val_sat,
+                            "valueBtc": satoshi_to_btc_str(val_sat),
+                            "timestamp": ts_iso,
+                        }],
+                    }
+                else:
+                    rec = out_edges_map[pair]
+                    rec["totalValueSatoshi"] += val_sat
+                    rec["valueSatoshi"] += val_sat
+                    rec["transactionCount"] += 1
+                    if ts_iso and not rec["timestamp"]:
+                        rec["timestamp"] = ts_iso
+                    rec["transactions"].append({
                         "transactionId": src_tx,
                         "valueSatoshi": val_sat,
-                        "valueBtc": val_btc,
-                        "timestamp": ts.isoformat() if ts else None,
-                    }],
-                })
+                        "valueBtc": satoshi_to_btc_str(val_sat),
+                        "timestamp": ts_iso,
+                    })
+
+            for rec in out_edges_map.values():
+                val_btc = satoshi_to_btc_str(rec["totalValueSatoshi"])
+                rec["totalValueBtc"] = val_btc
+                rec["valueBtc"] = val_btc
+                edges_list.append(rec)
 
         # Populate address structural graph metrics
         for aid, node in addr_dict.items():

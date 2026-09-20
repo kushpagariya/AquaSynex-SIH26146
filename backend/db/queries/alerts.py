@@ -183,6 +183,25 @@ def list_alerts(
     where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
     direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
 
+    if sort_col == "severity":
+        order_expr = """CASE LOWER(severity)
+            WHEN 'critical' THEN 4
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END"""
+    elif sort_col == "priority":
+        order_expr = """CASE UPPER(priority)
+            WHEN 'P1' THEN 4
+            WHEN 'P2' THEN 3
+            WHEN 'P3' THEN 2
+            WHEN 'P4' THEN 1
+            ELSE 0
+        END"""
+    else:
+        order_expr = sort_col
+
     count_sql = f"SELECT COUNT(*) FROM alerts{where_sql}"
     count_row = conn.execute(count_sql, params).fetchone()
     total_items = count_row[0] if count_row else 0
@@ -196,7 +215,7 @@ def list_alerts(
            acknowledged_at, resolved_at, assigned_to, metadata_json
     FROM alerts
     {where_sql}
-    ORDER BY {sort_col} {direction}
+    ORDER BY {order_expr} {direction}
     LIMIT ? OFFSET ?
     """
     exec_params = list(params) + [page_size, offset]

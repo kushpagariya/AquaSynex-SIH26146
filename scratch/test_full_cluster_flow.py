@@ -20,7 +20,8 @@ res_map = {r['entity_id']: r for r in results}
 alerts_rows = conn.execute("""
     SELECT alert_id, alert_type, severity, priority, status, entity_id, transaction_id
     FROM alerts
-""").fetchall()
+    WHERE analysis_id = ?
+""", [analysis_id]).fetchall()
 
 alerts_by_tx = {}
 alerts_by_entity = {}

@@ -184,11 +184,17 @@ export function InvestigationPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
-                    navigate(
-                      `/transactions?txid=${encodeURIComponent(data.entity.address || data.entity.id)}`,
-                    )
-                  }
+                  onClick={() => {
+                    if (data.entity.type === "transaction") {
+                      navigate(
+                        `/transactions?txid=${encodeURIComponent(data.entity.id)}`,
+                      )
+                    } else {
+                      navigate(
+                        `/transactions?address=${encodeURIComponent(data.entity.address || data.entity.id)}`,
+                      )
+                    }
+                  }}
                   className="flex items-center gap-1.5 rounded border border-line bg-panel px-3 py-1.5 text-xs font-medium text-fg-muted hover:text-fg hover:border-gray-300 transition-colors"
                 >
                   <Activity className="size-3.5 text-accent" />

@@ -168,10 +168,11 @@ class AnalysisService:
             try:
                 from backend.services.alert_engine import AlertEngine
                 alert_engine = AlertEngine(self.conn)
-                generated_alerts = alert_engine.generate_alerts_for_analysis(
-                    analysis_id=analysis_id,
-                    dataset_id=dataset_id,
-                )
+                with get_db_lock():
+                    generated_alerts = alert_engine.generate_alerts_for_analysis(
+                        analysis_id=analysis_id,
+                        dataset_id=dataset_id,
+                    )
                 logger.info(f"Generated {len(generated_alerts)} alerts for analysis {analysis_id}")
             except Exception as alert_exc:
                 logger.error(f"Alert generation encountered error for analysis {analysis_id}: {alert_exc}")

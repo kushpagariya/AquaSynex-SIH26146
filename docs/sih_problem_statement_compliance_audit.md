@@ -327,7 +327,7 @@ Enable native parsing of XML transaction datasets matching the SIH schema withou
 
 #### Verification
 - Create `datasets/test_sample.xml`.
-- Execute upload via `POST /api/v1/datasets/upload`. Confirm HTTP 201 and identical table population in DuckDB.
+- Execute upload via `POST /api/datasets/upload`. Confirm HTTP 201 and identical table population in DuckDB.
 
 ---
 
