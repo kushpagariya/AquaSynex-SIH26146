@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import duckdb
 from backend.services.geoip_service import get_geoip_service
 from backend.services.network_service import NetworkService
+from backend.services.dataset_service import DatasetService
 
 
 def test_mmdb_resolves_known_ip():
@@ -254,3 +255,95 @@ def test_transactions_api_ip_drilldown(client: TestClient, db: duckdb.DuckDBPyCo
     assert none_resp.status_code == 200
     assert len(none_resp.json()["data"]) == 0
     assert none_resp.json()["meta"]["pagination"]["totalItems"] == 0
+
+
+def test_asn_strict_positive_validation_in_ingestion(db: duckdb.DuckDBPyConnection, tmp_path):
+    """Verify ingestion pipeline accepts strictly positive integer ASNs (> 0) and converts 0, negative, null, or invalid ASNs to NULL."""
+    dataset_id = "ds_asn_test"
+    csv_file = tmp_path / "test_asn.csv"
+    csv_content = (
+        "txid,timestamp,input_addresses,output_addresses,input_amounts,output_amounts,fee,script_type,src_ip,src_port,dst_ip,dst_port,country,asn\n"
+        "tx_0001_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:00Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,8.8.8.8,12345,10.0.0.1,8333,US,15169\n"
+        "tx_0002_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:01Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,8.8.4.4,12346,10.0.0.1,8333,US,AS15169\n"
+        "tx_0003_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:02Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,51.109.74.1,12347,10.0.0.1,8333,GB,as8075\n"
+        "tx_0004_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:03Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,10.0.0.1,12348,10.0.0.2,8333,ZZ,0\n"
+        "tx_0005_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:04Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,10.0.0.2,12349,10.0.0.3,8333,ZZ,AS0\n"
+        "tx_0006_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:05Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,10.0.0.3,12350,10.0.0.4,8333,ZZ,-10\n"
+        "tx_0007_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:06Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,10.0.0.4,12351,10.0.0.5,8333,ZZ,\"-50\"\n"
+        "tx_0008_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:07Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,10.0.0.5,12352,10.0.0.6,8333,XX,invalid\n"
+        "tx_0009_000000000000000000000000000000000000000000000000000000000000,2026-03-01T12:00:08Z,['addr1'],['addr2'],[100000],[90000],10000,p2pkh,10.0.0.6,12353,10.0.0.7,8333,XX,\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    db.execute(
+        "INSERT INTO datasets (dataset_id, name, file_name, file_path, format, uploaded_at, status) VALUES (?, 'ASN Test', 'test.csv', ?, 'csv', current_timestamp, 'processing')",
+        [dataset_id, str(csv_file)],
+    )
+
+    ds_svc = DatasetService(db)
+    ds_svc._ingest_file(dataset_id, csv_file, "csv")
+
+    rows = db.execute(
+        "SELECT transaction_id, src_ip, asn FROM network_events WHERE dataset_id = ? ORDER BY transaction_id",
+        [dataset_id],
+    ).fetchall()
+    asn_by_tx = {r[0][:7]: r[2] for r in rows}
+
+    # Positive integer ASNs accepted:
+    assert asn_by_tx["tx_0001"] == 15169
+    assert asn_by_tx["tx_0002"] == 15169
+    assert asn_by_tx["tx_0003"] == 8075
+
+    # 0, AS0, negative (-10, -50), invalid strings, and empty -> NULL
+    assert asn_by_tx["tx_0004"] is None
+    assert asn_by_tx["tx_0005"] is None
+    assert asn_by_tx["tx_0006"] is None
+    assert asn_by_tx["tx_0007"] is None
+    assert asn_by_tx["tx_0008"] is None
+    assert asn_by_tx["tx_0009"] is None
+
+    # Verify no non-positive ASN exists in the table
+    non_positive = db.execute(
+        "SELECT COUNT(*) FROM network_events WHERE dataset_id = ? AND (asn IS NOT NULL AND asn <= 0)",
+        [dataset_id],
+    ).fetchone()[0]
+    assert non_positive == 0
+
+
+def test_network_map_rejects_non_positive_asn(db: duckdb.DuckDBPyConnection):
+    """Verify get_network_map ignores zero/negative ASNs and does not populate 'AS0' or count invalid ASNs."""
+    dataset_id = "ds_asn_map_test"
+    now = datetime.now(timezone.utc)
+    db.execute(
+        "INSERT INTO datasets (dataset_id, name, file_name, file_path, format, uploaded_at, status) VALUES (?, 'Map ASN Test', 'test.csv', '/tmp/test.csv', 'csv', ?, 'ready')",
+        [dataset_id, now],
+    )
+
+    # Insert events with 0, negative, and positive ASNs
+    events = [
+        ("EVT_P1", "TX_P1", dataset_id, now, "10.0.0.1", 8333, "10.0.0.2", 8333, "ZZ", 0),
+        ("EVT_P2", "TX_P2", dataset_id, now, "10.0.0.3", 8333, "10.0.0.4", 8333, "ZZ", -5),
+        ("EVT_P3", "TX_P3", dataset_id, now, "8.8.8.8", 8333, "10.0.0.5", 8333, "US", 15169),
+    ]
+    for ev in events:
+        db.execute(
+            "INSERT INTO network_events (event_id, transaction_id, dataset_id, timestamp, src_ip, src_port, dst_ip, dst_port, country, asn) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            list(ev),
+        )
+
+    svc = NetworkService(db)
+    res = svc.get_network_map(dataset_id)
+
+    # metrics.unique_asns should strictly count positive ASNs (1 for AS15169)
+    assert res["metrics"]["unique_asns"] == 1
+
+    point_by_ip = {p["ip"]: p for p in res["points"]}
+    assert point_by_ip["10.0.0.1"]["asn"] is None
+    assert point_by_ip["10.0.0.3"]["asn"] is None
+    assert point_by_ip["8.8.8.8"]["asn"] == "AS15169"
+
+    for point in res["points"]:
+        if point["asn"]:
+            assert point["asn"].startswith("AS")
+            asn_num = int(point["asn"][2:])
+            assert asn_num > 0

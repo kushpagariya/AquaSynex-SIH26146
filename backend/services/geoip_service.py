@@ -181,7 +181,17 @@ class GeoIPService:
             try:
                 asn_rec = self._asn_reader.get(clean_ip)
                 if isinstance(asn_rec, dict):
-                    asn = asn_rec.get("asn")
+                    raw_asn = asn_rec.get("asn")
+                    if raw_asn is not None:
+                        clean_asn_str = str(raw_asn).strip()
+                        if clean_asn_str.upper().startswith("AS"):
+                            clean_asn_str = clean_asn_str[2:].strip()
+                        if clean_asn_str.isdigit() and int(clean_asn_str) > 0:
+                            asn = f"AS{int(clean_asn_str)}"
+                        else:
+                            asn = None
+                    else:
+                        asn = None
                     as_name = asn_rec.get("as_name")
                     as_domain = asn_rec.get("as_domain")
 

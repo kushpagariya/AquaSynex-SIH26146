@@ -172,9 +172,14 @@ class DataValidationEngine:
         if invalid_countries > 0:
             result.add_error(f"{invalid_countries} invalid country codes in network_events.country.")
 
-        # ASNs
-        if (df_net["asn"] <= 0).any():
-            result.add_error(f"{(df_net['asn'] <= 0).sum()} non-positive ASNs in network_events.asn.")
+        # ASNs: Only positive integer ASNs (ASN > 0) are valid
+        if "asn" in df_net.columns:
+            non_null_asn = df_net["asn"].dropna()
+            if len(non_null_asn) > 0:
+                numeric_asn = pd.to_numeric(non_null_asn, errors="coerce")
+                invalid_or_non_positive = int(((numeric_asn <= 0) | numeric_asn.isna()).sum())
+                if invalid_or_non_positive > 0:
+                    result.add_error(f"{invalid_or_non_positive} non-positive or invalid ASNs in network_events.asn.")
 
     def _validate_conservation(
         self, 

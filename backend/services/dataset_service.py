@@ -421,7 +421,18 @@ class DatasetService:
             dst_ip_expr = f'CAST({escape_sql_identifier(dst_ip_col)} AS VARCHAR)' if dst_ip_col else "NULL"
             dst_port_expr = f'TRY_CAST({escape_sql_identifier(dst_port_col)} AS INTEGER)' if dst_port_col else "NULL"
             country_expr = f'UPPER(TRIM(CAST({escape_sql_identifier(country_col)} AS VARCHAR)))' if country_col else "NULL"
-            asn_expr = f'TRY_CAST({escape_sql_identifier(asn_col)} AS BIGINT)' if asn_col else "NULL"
+            if asn_col:
+                asn_ident = escape_sql_identifier(asn_col)
+                asn_expr = f"""
+                CASE 
+                    WHEN {asn_ident} IS NULL THEN NULL
+                    WHEN TRY_CAST(REGEXP_REPLACE(TRIM(CAST({asn_ident} AS VARCHAR)), '^(?i)AS', '') AS BIGINT) > 0 
+                        THEN TRY_CAST(REGEXP_REPLACE(TRIM(CAST({asn_ident} AS VARCHAR)), '^(?i)AS', '') AS BIGINT)
+                    ELSE NULL 
+                END
+                """
+            else:
+                asn_expr = "NULL"
 
             insert_net_sql = f"""
             INSERT OR REPLACE INTO network_events (

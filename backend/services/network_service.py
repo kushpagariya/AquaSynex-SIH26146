@@ -75,7 +75,7 @@ class NetworkService:
             MIN(timestamp) AS first_seen,
             MAX(timestamp) AS last_seen,
             MAX(country) FILTER (WHERE country IS NOT NULL AND TRIM(country) != '') AS dataset_country,
-            MAX(asn) FILTER (WHERE asn IS NOT NULL) AS dataset_asn
+            MAX(asn) FILTER (WHERE asn IS NOT NULL AND asn > 0) AS dataset_asn
         FROM ep
         GROUP BY ip
         ORDER BY event_count DESC, ip ASC
@@ -113,13 +113,19 @@ class NetworkService:
             else:
                 final_country_code = None
 
-            # ASN:
-            if dataset_asn is not None:
-                final_asn = f"AS{dataset_asn}"
-                final_as_name = enrichment.as_name or f"AS{dataset_asn}"
-            else:
-                final_asn = enrichment.asn
-                final_as_name = enrichment.as_name
+            # ASN: only positive integer ASNs (ASN > 0)
+            final_asn = None
+            final_as_name = None
+
+            if dataset_asn is not None and isinstance(dataset_asn, (int, float)) and int(dataset_asn) > 0:
+                final_asn = f"AS{int(dataset_asn)}"
+                final_as_name = enrichment.as_name or f"AS{int(dataset_asn)}"
+            elif enrichment.asn:
+                raw_asn_str = str(enrichment.asn).strip()
+                digits = raw_asn_str.upper().removeprefix("AS").strip()
+                if digits.isdigit() and int(digits) > 0:
+                    final_asn = f"AS{int(digits)}"
+                    final_as_name = enrichment.as_name or f"AS{int(digits)}"
 
             country_key = final_country_code or final_country
             if country_key:
