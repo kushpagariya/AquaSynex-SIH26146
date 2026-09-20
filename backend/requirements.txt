@@ -14,3 +14,4 @@ networkx
 xgboost
 catboost
 pyyaml
+maxminddb>=2.6.0,<3.0.0

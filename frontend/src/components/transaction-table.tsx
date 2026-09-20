@@ -14,7 +14,7 @@ export function TransactionTable({
 
   if (!transactions.length) {
     return (
-      <p className="px-4 py-6 text-sm text-fg-subtle">
+      <p className="px-5 py-8 text-center text-xs text-fg-subtle">
         No transactions associated with this entity.
       </p>
     )
@@ -22,41 +22,41 @@ export function TransactionTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-fg-subtle">
-            <th className="px-4 py-2.5 font-medium">TXID</th>
-            <th className="px-4 py-2.5 font-medium">Time</th>
-            <th className="px-4 py-2.5 font-medium">Amount</th>
-            <th className="px-4 py-2.5 font-medium">Fee</th>
-            <th className="px-4 py-2.5 font-medium">Risk</th>
-            <th className="px-4 py-2.5" />
+          <tr className="border-b border-line bg-panel-2/60 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle select-none">
+            <th className="px-5 py-3 font-sans">TXID</th>
+            <th className="px-4 py-3 font-sans">Time</th>
+            <th className="px-4 py-3 font-sans">Amount</th>
+            <th className="px-4 py-3 font-sans">Fee (BTC)</th>
+            <th className="px-4 py-3 font-sans">Risk</th>
+            <th className="px-4 py-3 text-right font-sans">Action</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-line-soft text-xs">
           {transactions.map((t) => (
             <tr
               key={t.txid}
               onClick={() => navigate(`/transaction/${t.txid}`)}
-              className="group cursor-pointer border-b border-line-soft transition-colors last:border-0 hover:bg-panel-2"
+              className="group cursor-pointer transition-colors hover:bg-accent-soft/30"
             >
-              <td className="px-4 py-3">
+              <td className="px-5 py-3.5">
                 <MonoId value={t.txid} head={10} tail={6} copyable={false} />
               </td>
-              <td className="whitespace-nowrap px-4 py-3 font-mono-id text-xs text-fg-subtle">
+              <td className="whitespace-nowrap px-4 py-3.5 font-mono text-[11px] text-fg-subtle">
                 {formatTime(t.timestamp)}
               </td>
-              <td className="whitespace-nowrap px-4 py-3 font-mono-id tabular-nums text-fg">
+              <td className="whitespace-nowrap px-4 py-3.5 font-sans font-semibold tabular-nums text-fg">
                 {formatBtc(t.amount)}
               </td>
-              <td className="whitespace-nowrap px-4 py-3 font-mono-id text-xs tabular-nums text-fg-subtle">
+              <td className="whitespace-nowrap px-4 py-3.5 font-mono text-xs tabular-nums text-fg-muted">
                 {t.fee.toFixed(5)}
               </td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3.5">
                 {t.severity ? (
                   <div className="flex items-center gap-2">
                     <span
-                      className="font-mono-id text-xs font-semibold tabular-nums"
+                      className="font-mono text-xs font-bold tabular-nums"
                       style={{ color: severityColorVar(t.severity) }}
                     >
                       {t.riskScore}
@@ -64,11 +64,13 @@ export function TransactionTable({
                     <SeverityBadge severity={t.severity} />
                   </div>
                 ) : (
-                  <span className="text-fg-subtle">—</span>
+                  <span className="text-fg-subtle text-xs">—</span>
                 )}
               </td>
-              <td className="px-4 py-3 text-right">
-                <ChevronRight className="ml-auto size-4 text-fg-subtle transition-colors group-hover:text-accent" />
+              <td className="px-4 py-3.5 text-right">
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent opacity-70 group-hover:opacity-100 transition-opacity">
+                  Inspect <ChevronRight className="size-3.5" />
+                </span>
               </td>
             </tr>
           ))}
