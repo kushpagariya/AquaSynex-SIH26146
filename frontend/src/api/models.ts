@@ -6,14 +6,12 @@ export function listModels(): Promise<ModelInfo[]> {
 }
 
 /**
- * Fetches the static model metadata JSON file bundled in the frontend assets.
+ * Fetches frozen production ML model metadata and specifications from backend.
  * Used by Model Insights page to display dynamic model performance metrics.
  */
 export async function getModelMetadata(): Promise<Record<string, unknown> | null> {
   try {
-    const res = await fetch("/models/model_metadata.json")
-    if (!res.ok) return null
-    return await res.json()
+    return await apiData<Record<string, unknown>>("/api/models/metadata")
   } catch {
     return null
   }

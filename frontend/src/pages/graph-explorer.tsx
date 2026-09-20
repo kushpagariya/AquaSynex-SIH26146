@@ -89,6 +89,7 @@ export function GraphExplorerPage() {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<Core | null>(null)
+  const requestIdRef = useRef(0)
 
   // Mode: "investigation" (focused neighborhood) vs "full" (full connections)
   const [viewMode, setViewMode] = useState<"investigation" | "full">(focusParam ? "investigation" : "full")
@@ -147,6 +148,8 @@ export function GraphExplorerPage() {
       mode: "investigation" | "full" = viewMode,
       highRisk = suspiciousOnly,
     ) => {
+      const currentRequestId = ++requestIdRef.current
+
       // In investigation mode, if no entity is queried or focused, return to empty state
       if (mode === "investigation" && !targetEntityId) {
         setRawGraph(null)
@@ -162,6 +165,8 @@ export function GraphExplorerPage() {
 
       try {
         const { analysisId, datasetId } = await getActiveContext()
+        if (currentRequestId !== requestIdRef.current) return
+
         if (!analysisId && !datasetId) {
           setErrorMsg("No active dataset or analysis found.")
           setLoading(false)
@@ -186,6 +191,8 @@ export function GraphExplorerPage() {
             highRiskOnly: highRisk,
           })
         }
+
+        if (currentRequestId !== requestIdRef.current) return
 
         setRawGraph(exportData)
 
@@ -214,6 +221,7 @@ export function GraphExplorerPage() {
 
         setLoading(false)
       } catch (err) {
+        if (currentRequestId !== requestIdRef.current) return
         const msg = err instanceof Error ? err.message : "Failed to load graph"
         setErrorMsg(msg)
         setLoading(false)
@@ -239,12 +247,18 @@ export function GraphExplorerPage() {
     e.preventDefault()
     const trimmed = searchQuery.trim()
     if (!trimmed) {
-      setSearchParams({})
-      loadGraphData(undefined, currentHops, viewMode, suspiciousOnly)
+      if (focusParam) {
+        setSearchParams({})
+      } else {
+        loadGraphData(undefined, currentHops, "full", suspiciousOnly)
+      }
       return
     }
-    setSearchParams({ focus: trimmed })
-    loadGraphData(trimmed, currentHops, viewMode, suspiciousOnly)
+    if (focusParam === trimmed) {
+      loadGraphData(trimmed, currentHops, "investigation", suspiciousOnly)
+    } else {
+      setSearchParams({ focus: trimmed })
+    }
   }
 
   // Handle Hop Depth Change

@@ -1329,7 +1329,7 @@ export async function getTransactionsDetailed(
     (params.behavior && params.behavior !== "all") ||
     (params.country && params.country !== "all") ||
     (params.asn && params.asn !== "all") ||
-    (params.searchTxid && !params.ip && params.searchTxid.length < 64)
+    (params.searchTxid && params.searchTxid.length < 64)
   )
 
   // Fetch transaction list from API (server-side filtering for ip, address, txid, risk, timestamps)
@@ -1349,7 +1349,7 @@ export async function getTransactionsDetailed(
     analysisId,
     ip: params.ip,
     address: params.address,
-    txid: params.searchTxid && !params.ip && params.searchTxid.length === 64 ? params.searchTxid : undefined,
+    txid: params.searchTxid && params.searchTxid.length === 64 ? params.searchTxid : undefined,
   })
 
   const rawList = txRes.data || []
@@ -1427,7 +1427,7 @@ export async function getTransactionsDetailed(
     (params.behavior && params.behavior !== "all") ||
     (params.country && params.country !== "all") ||
     (params.asn && params.asn !== "all") ||
-    (params.searchTxid && !params.ip && params.searchTxid.length < 64),
+    (params.searchTxid && params.searchTxid.length < 64),
   )
   const totalItems = isClientFiltered ? filtered.length : (txRes.meta?.pagination?.totalItems ?? filtered.length)
 

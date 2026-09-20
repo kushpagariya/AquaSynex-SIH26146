@@ -48,6 +48,7 @@ export function TransactionsPage() {
 
   // Filter States
   const [searchTxid, setSearchTxid] = useState(initialSearch)
+  const [appliedTxid, setAppliedTxid] = useState(initialSearch)
   const [ipFilter, setIpFilter] = useState(initialIp)
   const [addressFilter, setAddressFilter] = useState(initialAddress)
   const [selectedSeverity, setSelectedSeverity] = useState<Severity | "all">(initialSeverity)
@@ -67,7 +68,10 @@ export function TransactionsPage() {
     const urlTxid = searchParams.get("txid") || ""
     if (urlIp !== ipFilter) setIpFilter(urlIp)
     if (urlAddr !== addressFilter) setAddressFilter(urlAddr)
-    if (urlTxid !== searchTxid) setSearchTxid(urlTxid)
+    if (urlTxid !== appliedTxid) {
+      setSearchTxid(urlTxid)
+      setAppliedTxid(urlTxid)
+    }
   }, [searchParams])
 
   function loadTransactions() {
@@ -85,7 +89,7 @@ export function TransactionsPage() {
       minRiskScore: minRisk > 0 ? minRisk : undefined,
       maxRiskScore: maxRisk < 100 ? maxRisk : undefined,
       behavior: selectedBehavior === "all" ? undefined : selectedBehavior,
-      searchTxid: searchTxid.trim() || undefined,
+      searchTxid: appliedTxid.trim() || undefined,
       country: countryFilter === "all" ? undefined : countryFilter,
       asn: asnFilter === "all" ? undefined : asnFilter,
       ip: ipFilter.trim() || undefined,
@@ -104,19 +108,36 @@ export function TransactionsPage() {
   useEffect(() => {
     loadTransactions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, sortKey, selectedSeverity, selectedBehavior, minRisk, maxRisk, countryFilter, asnFilter, ipFilter, addressFilter])
+  }, [page, pageSize, sortKey, selectedSeverity, selectedBehavior, minRisk, maxRisk, countryFilter, asnFilter, ipFilter, addressFilter, appliedTxid])
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (page !== 1) {
-      setPage(1)
+    const trimmed = searchTxid.trim()
+    const newParams = new URLSearchParams(searchParams)
+    if (trimmed) {
+      newParams.set("txid", trimmed)
     } else {
-      loadTransactions()
+      newParams.delete("txid")
+    }
+    setSearchParams(newParams)
+
+    if (trimmed === appliedTxid) {
+      if (page !== 1) {
+        setPage(1)
+      } else {
+        loadTransactions()
+      }
+    } else {
+      setAppliedTxid(trimmed)
+      if (page !== 1) {
+        setPage(1)
+      }
     }
   }
 
   function handleResetFilters() {
     setSearchTxid("")
+    setAppliedTxid("")
     setIpFilter("")
     setAddressFilter("")
     setSelectedSeverity("all")
@@ -172,7 +193,7 @@ export function TransactionsPage() {
               >
                 Search
               </button>
-              {(searchTxid || ipFilter || addressFilter || selectedSeverity !== "all" || selectedBehavior !== "all" || minRisk > 0 || countryFilter !== "all" || asnFilter !== "all") ? (
+              {(searchTxid || appliedTxid || ipFilter || addressFilter || selectedSeverity !== "all" || selectedBehavior !== "all" || minRisk > 0 || countryFilter !== "all" || asnFilter !== "all") ? (
                 <button
                   type="button"
                   onClick={handleResetFilters}

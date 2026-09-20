@@ -106,11 +106,12 @@ class NetworkService:
             # Data Priority: prefer dataset-provided values
             # Country:
             final_country = dataset_country if dataset_country else enrichment.country
-            final_country_code = (
-                dataset_country
-                if dataset_country and len(dataset_country) == 2
-                else (enrichment.country_code or (final_country[:2].upper() if final_country else None))
-            )
+            if dataset_country and len(dataset_country.strip()) == 2:
+                final_country_code = dataset_country.strip().upper()
+            elif enrichment.country_code:
+                final_country_code = enrichment.country_code.strip().upper()
+            else:
+                final_country_code = None
 
             # ASN:
             if dataset_asn is not None:
@@ -120,8 +121,9 @@ class NetworkService:
                 final_asn = enrichment.asn
                 final_as_name = enrichment.as_name
 
-            if final_country:
-                unique_countries.add(final_country)
+            country_key = final_country_code or final_country
+            if country_key:
+                unique_countries.add(country_key)
             if final_asn:
                 unique_asns.add(final_asn)
 

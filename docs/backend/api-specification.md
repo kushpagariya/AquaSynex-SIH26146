@@ -479,7 +479,8 @@ All fields optional. If `modelId` omitted, uses the default configured model.
 **Query parameters**:
 | Parameter | Type | Description |
 |---|---|---|
-| `analysisId` | string | Optional analysis ID context |
+| `datasetId` | string | **Required** for alternative route (`GET /api/network/map`). Target dataset identifier. |
+| `analysisId` | string | *Optional*. Analysis ID context. |
 
 **Response** (`200 OK`):
 ```json
@@ -515,6 +516,14 @@ All fields optional. If `modelId` omitted, uses the default configured model.
         "firstSeen": "2026-09-11T10:00:00+00:00",
         "lastSeen": "2026-09-11T12:00:00+00:00",
         "isMapped": true
+      }
+    ],
+    "edges": [
+      {
+        "srcIp": "104.26.184.134",
+        "dstIp": "198.51.100.12",
+        "eventCount": 24,
+        "transactionCount": 18
       }
     ]
   },
