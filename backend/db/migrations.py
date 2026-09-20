@@ -164,6 +164,41 @@ MIGRATION_STATEMENTS = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_network_events_dataset ON network_events(dataset_id);",
     "CREATE INDEX IF NOT EXISTS idx_network_events_tx ON network_events(transaction_id);",
+
+    # 9. Alerts table
+    """
+    CREATE TABLE IF NOT EXISTS alerts (
+        alert_id            VARCHAR PRIMARY KEY,
+        analysis_id         VARCHAR NOT NULL,
+        dataset_id          VARCHAR NOT NULL,
+        fingerprint         VARCHAR NOT NULL,
+        grouping_key        VARCHAR NOT NULL,
+        transaction_id      VARCHAR,
+        entity_id           VARCHAR NOT NULL,
+        entity_type         VARCHAR NOT NULL,
+        alert_type          VARCHAR NOT NULL,
+        severity            VARCHAR NOT NULL,
+        priority            VARCHAR NOT NULL,
+        risk_score          DOUBLE NOT NULL,
+        behavior_type       VARCHAR,
+        trigger_source      VARCHAR NOT NULL,
+        trigger_reason      VARCHAR NOT NULL,
+        status              VARCHAR NOT NULL,
+        created_at          TIMESTAMPTZ NOT NULL,
+        updated_at          TIMESTAMPTZ NOT NULL,
+        first_seen_at       TIMESTAMPTZ,
+        last_seen_at        TIMESTAMPTZ,
+        acknowledged_at     TIMESTAMPTZ,
+        resolved_at         TIMESTAMPTZ,
+        assigned_to         VARCHAR,
+        metadata_json       JSON,
+        UNIQUE(analysis_id, fingerprint)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_alerts_dataset ON alerts(dataset_id);",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_analysis ON alerts(analysis_id);",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_entity ON alerts(entity_id);",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_tx ON alerts(transaction_id);",
 ]
 
 

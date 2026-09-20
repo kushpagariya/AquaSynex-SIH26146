@@ -29,3 +29,20 @@ export function getAddressSubgraph(
     `/api/addresses/${addressId}/graph${buildQuery(params as Record<string, unknown>)}`,
   )
 }
+
+export interface GetGraphNeighborhoodParams {
+  analysisId?: string
+  datasetId?: string
+  entityType?: string
+  depth?: number
+  highRiskOnly?: boolean
+}
+
+export function getGraphNeighborhood(
+  entityId: string,
+  params?: GetGraphNeighborhoodParams,
+): Promise<GraphExport> {
+  return apiData<GraphExport>(
+    `/api/graph/neighborhood${buildQuery({ entityId, ...params })}`,
+  )
+}

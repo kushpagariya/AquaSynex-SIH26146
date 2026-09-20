@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from backend.api.addresses import router as addresses_router
+from backend.api.alerts import router as alerts_router
 from backend.api.analyses import router as analyses_router
 from backend.api.datasets import router as datasets_router
 from backend.api.graph import router as graph_router
@@ -197,4 +198,5 @@ app.include_router(transactions_router, prefix="/api")
 app.include_router(addresses_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(results_router, prefix="/api")
+app.include_router(alerts_router, prefix="/api")
 app.include_router(models_router, prefix="/api")

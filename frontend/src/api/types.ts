@@ -146,6 +146,24 @@ export interface NodeMetadata {
   firstSeen?: string
   lastSeen?: string
   activeDays?: number
+  amountBtc?: string
+  feeBtc?: string
+  inputCount?: number
+  outputCount?: number
+  timestamp?: string
+  blockHeight?: number
+  feeRate?: number
+  behavior?: string
+  riskScore?: number
+  riskLevel?: string
+  evidence?: {
+    graph?: Record<string, any>
+    temporal?: Record<string, any>
+    network?: Record<string, any>
+    ml?: Record<string, any>
+  }
+  alerts?: Record<string, any>[]
+  [key: string]: any
 }
 
 export interface GraphNodeDto {
@@ -154,7 +172,9 @@ export interface GraphNodeDto {
   nodeType: string
   riskScore?: number
   riskLevel?: string
+  behaviorType?: string
   metadata?: NodeMetadata
+  alerts?: Record<string, any>[]
 }
 
 export interface GraphEdgeTransactionDto {
@@ -186,6 +206,33 @@ export interface GraphExport {
   subgraphCenter?: string
   nodes: GraphNodeDto[]
   edges: GraphEdgeDto[]
+}
+
+export interface SelectedEntityInfo {
+  entityId: string
+  entityType: string
+  label?: string
+  exists: boolean
+  riskScore?: number
+  riskLevel?: string
+  behaviorType?: string
+  metadata?: Record<string, unknown>
+  alerts?: Record<string, unknown>[]
+}
+
+export interface GraphSummary {
+  nodeCount: number
+  edgeCount: number
+  depth: number
+  highRiskOnly: boolean
+  addressCount: number
+  transactionCount: number
+  clusterCount: number
+}
+
+export interface GraphNeighborhoodResponse extends GraphExport {
+  selectedEntity?: SelectedEntityInfo
+  summary?: GraphSummary
 }
 
 export interface FeatureExplanationSchema {
@@ -255,3 +302,23 @@ export interface HealthResponse {
   uptime?: number
   timestamp?: string
 }
+
+export interface AlertItemDto {
+  alertId: string
+  analysisId: string
+  datasetId: string
+  entityId: string
+  entityType: string
+  transactionId?: string
+  alertType: string
+  severity: string
+  priority: string
+  riskScore: number
+  behaviorType?: string
+  triggerSource?: string
+  triggerReason?: string
+  status: string
+  createdAt?: string
+  metadata?: Record<string, unknown>
+}
+

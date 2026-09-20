@@ -4,13 +4,12 @@ import {
   Users,
   Search,
   RefreshCw,
-  ExternalLink,
   ShieldAlert,
-  Wallet,
-  ArrowLeftRight,
   Info,
   ChevronRight,
   Share2,
+  Bell,
+  AlertTriangle,
 } from "lucide-react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel"
@@ -19,7 +18,7 @@ import { MonoId } from "@/components/ui/mono-id"
 import { LoadingState, ErrorState, EmptyState } from "@/components/ui/states"
 import { getInferredClusters } from "@/data/service"
 import type { InferredCluster, Severity } from "@/data/types"
-import { formatBtc, formatDateTime, formatNumber, cn } from "@/lib/utils"
+import { formatBtc, formatNumber, cn } from "@/lib/utils"
 
 export function EntitiesPage() {
   const navigate = useNavigate()
@@ -44,10 +43,13 @@ export function EntitiesPage() {
             ? res.find(
                 (c) =>
                   c.clusterId.toLowerCase() === focusClusterParam.toLowerCase() ||
+                  c.leadAddress.toLowerCase().includes(focusClusterParam.toLowerCase()) ||
                   c.associatedAddresses.some((a) => a.toLowerCase().includes(focusClusterParam.toLowerCase())),
               )
             : null
           setSelectedCluster(match || res[0])
+        } else {
+          setSelectedCluster(null)
         }
         setLoading(false)
       })
@@ -79,7 +81,7 @@ export function EntitiesPage() {
         <div className="flex items-center gap-2.5 rounded border border-line bg-panel px-4 py-2.5 text-xs text-fg-muted font-sans shadow-2xs">
           <Info className="size-3.5 shrink-0 text-accent" />
           <span>
-            <strong className="text-fg font-semibold">Behavioral Cluster Notice:</strong> Inferred via multi-input co-spending and topological graph heuristics for forensic clarity; does not prove legal ownership.
+            Clusters are inferred from transaction and graph relationships and do not establish ownership.
           </span>
         </div>
 
@@ -92,8 +94,8 @@ export function EntitiesPage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search cluster ID, lead address, or associated address..."
-                className="w-full rounded border border-line bg-panel-2 py-2 pl-9 pr-4 text-xs text-fg placeholder:text-fg-subtle focus:border-accent focus:bg-panel focus:outline-none transition-colors"
+                placeholder="Search cluster ID, lead/representative address, or associated address..."
+                className="w-full rounded border border-line bg-panel-2 py-2 pl-9 pr-4 text-xs text-fg placeholder:text-fg-subtle focus:border-accent focus:bg-panel focus:outline-none transition-colors font-sans"
               />
             </div>
 
@@ -142,7 +144,7 @@ export function EntitiesPage() {
                 <ErrorState title="Failed to load clusters" description={errorMsg} />
               ) : !filteredClusters.length ? (
                 <EmptyState
-                  title="No Inferred Clusters Match Filters"
+                  title="No behavioral clusters found in the active dataset."
                   description="Adjust your search term or severity criteria."
                 />
               ) : (
@@ -156,12 +158,14 @@ export function EntitiesPage() {
                         <th className="px-4 py-3">Volume</th>
                         <th className="px-4 py-3">Risk</th>
                         <th className="px-4 py-3">Dominant Behavior</th>
+                        <th className="px-4 py-3">Alerts</th>
                         <th className="px-4 py-3 text-right" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line-soft text-xs">
                       {filteredClusters.map((c) => {
                         const isSelected = selectedCluster?.clusterId === c.clusterId
+                        const totalVol = Number((c.totalReceived + c.totalSent).toFixed(4))
                         return (
                           <tr
                             key={c.clusterId}
@@ -181,7 +185,7 @@ export function EntitiesPage() {
                               {formatNumber(c.transactionCount)}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3.5 font-sans font-semibold tabular-nums text-fg">
-                              {formatBtc(c.totalReceived)}
+                              {formatBtc(totalVol)}
                             </td>
                             <td className="px-4 py-3.5 font-mono font-bold tabular-nums">
                               <span style={{ color: severityColorVar(c.severity) }}>
@@ -191,6 +195,21 @@ export function EntitiesPage() {
                             <td className="px-4 py-3.5">
                               <span className="inline-flex items-center rounded border border-line bg-panel-2 px-2 py-0.5 text-[11px] font-medium text-fg">
                                 {c.dominantBehavior}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium font-sans",
+                                  c.activeAlertCount > 0
+                                    ? "border border-red-200 bg-red-50 text-red-700 font-semibold"
+                                    : "border border-line bg-panel-2 text-fg-muted",
+                                )}
+                              >
+                                <Bell className="size-3" />
+                                {c.activeAlertCount > 0
+                                  ? `${c.activeAlertCount} active`
+                                  : `${c.totalAlertCount || 0} alerts`}
                               </span>
                             </td>
                             <td className="px-4 py-3.5 text-right text-fg-subtle">
@@ -211,8 +230,8 @@ export function EntitiesPage() {
             {selectedCluster ? (
               <Panel className="sticky top-6">
                 <PanelHeader
-                  title={`Cluster: ${selectedCluster.clusterId}`}
-                  subtitle="Inferred topological component view"
+                  title={`Cluster ${selectedCluster.clusterId}`}
+                  subtitle="Inferred behavioral cluster summary"
                   icon={<ShieldAlert className="size-4" />}
                   action={
                     <button
@@ -226,10 +245,12 @@ export function EntitiesPage() {
                   }
                 />
                 <PanelBody className="space-y-5">
-                  {/* Aggregate Risk Card */}
+                  {/* 1. CLUSTER RISK & DOMINANT BEHAVIOR */}
                   <div className="rounded border border-line bg-panel-2 p-4 font-sans">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Cluster Risk Attribution</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+                        CLUSTER RISK
+                      </span>
                       <SeverityBadge severity={selectedCluster.severity} />
                     </div>
                     <div className="mt-3 flex items-baseline gap-2">
@@ -239,62 +260,142 @@ export function EntitiesPage() {
                       >
                         {selectedCluster.highestRisk}
                       </span>
-                      <span className="text-xs text-fg-subtle font-sans">/ 100 risk score</span>
+                      <span className="text-xs text-fg-subtle font-sans">/ 100</span>
+                      <span
+                        className="text-xs font-bold uppercase font-sans tracking-wide ml-1"
+                        style={{ color: severityColorVar(selectedCluster.severity) }}
+                      >
+                        {selectedCluster.severity}
+                      </span>
                     </div>
-                    <p className="mt-1.5 text-xs text-fg-muted leading-relaxed">
-                      Dominant pattern: <strong className="text-fg font-semibold">{selectedCluster.dominantBehavior}</strong>
+                    <p className="mt-1 text-[11px] text-fg-subtle font-sans">
+                      Aggregated from member transaction risk
                     </p>
-                  </div>
-
-                  {/* Cluster Statistics */}
-                  <div className="grid grid-cols-2 gap-3 font-sans">
-                    <div className="rounded border border-line bg-panel p-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Cluster Addresses</p>
-                      <p className="mt-1 font-mono text-base font-bold text-fg tabular-nums">
-                        {formatNumber(selectedCluster.clusterSize)}
-                      </p>
-                    </div>
-                    <div className="rounded border border-line bg-panel p-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Transaction Count</p>
-                      <p className="mt-1 font-mono text-base font-bold text-fg tabular-nums">
-                        {formatNumber(selectedCluster.transactionCount)}
-                      </p>
-                    </div>
-                    <div className="rounded border border-line bg-panel p-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Total Received</p>
-                      <p className="mt-1 font-sans text-base font-bold text-fg tabular-nums">
-                        {formatBtc(selectedCluster.totalReceived)}
-                      </p>
-                    </div>
-                    <div className="rounded border border-line bg-panel p-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Total Sent</p>
-                      <p className="mt-1 font-sans text-base font-bold text-fg tabular-nums">
-                        {formatBtc(selectedCluster.totalSent)}
-                      </p>
+                    <div className="mt-3 pt-3 border-t border-line flex items-center justify-between">
+                      <span className="text-xs text-fg-muted">Dominant behavior:</span>
+                      <span className="inline-flex items-center rounded border border-line bg-panel px-2.5 py-0.5 text-xs font-semibold text-fg">
+                        {selectedCluster.dominantBehavior}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Lead Address */}
+                  {/* 2. ACTIVE ALERTS */}
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle font-sans">
-                      Topological Lead Address
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle font-sans flex items-center gap-1.5">
+                        <AlertTriangle className="size-3.5 text-amber-500" />
+                        ACTIVE ALERTS ({selectedCluster.activeAlertCount || 0})
+                      </p>
+                      {selectedCluster.activeAlertCount > 0 && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.2 text-[10px] font-semibold text-red-700">
+                          {selectedCluster.activeAlertCount} active
+                        </span>
+                      )}
+                    </div>
+
+                    {selectedCluster.alerts && selectedCluster.alerts.length > 0 ? (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {selectedCluster.alerts.map((al) => (
+                          <div
+                            key={al.alertId}
+                            className="rounded border border-line bg-panel p-2.5 font-sans space-y-1.5 shadow-2xs"
+                          >
+                            <div className="flex items-center justify-between text-xs">
+                              <MonoId value={al.alertId} head={10} tail={6} />
+                              <span className="font-mono text-[11px] font-bold text-fg">
+                                {al.alertType}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                              <SeverityBadge severity={(al.severity?.toLowerCase() as Severity) || "medium"} />
+                              <span className="rounded border border-line bg-panel-2 px-1.5 py-0.5 text-[10px] font-mono font-bold text-fg">
+                                {al.priority}
+                              </span>
+                              <span className="rounded border border-line bg-panel-2 px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase text-accent">
+                                {al.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded border border-dashed border-line bg-panel-2/50 px-3 py-3 text-center text-xs text-fg-subtle font-sans">
+                        No active alerts associated with this cluster.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. CLUSTER SUMMARY */}
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle font-sans mb-2">
+                      CLUSTER SUMMARY
                     </p>
+                    <div className="grid grid-cols-2 gap-2.5 font-sans">
+                      <div className="rounded border border-line bg-panel p-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Addresses</p>
+                        <p className="mt-0.5 font-mono text-base font-bold text-fg tabular-nums">
+                          {formatNumber(selectedCluster.clusterSize)}
+                        </p>
+                      </div>
+                      <div className="rounded border border-line bg-panel p-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Transactions</p>
+                        <p className="mt-0.5 font-mono text-base font-bold text-fg tabular-nums">
+                          {formatNumber(selectedCluster.transactionCount)}
+                        </p>
+                      </div>
+                      <div className="rounded border border-line bg-panel p-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Total Received</p>
+                        <p className="mt-0.5 font-sans text-sm font-bold text-fg tabular-nums">
+                          {formatBtc(selectedCluster.totalReceived)}
+                        </p>
+                      </div>
+                      <div className="rounded border border-line bg-panel p-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Total Sent</p>
+                        <p className="mt-0.5 font-sans text-sm font-bold text-fg tabular-nums">
+                          {formatBtc(selectedCluster.totalSent)}
+                        </p>
+                      </div>
+                      <div className="rounded border border-line bg-panel p-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Aggregate Volume</p>
+                        <p className="mt-0.5 font-sans text-sm font-bold text-fg tabular-nums">
+                          {formatBtc(Number((selectedCluster.totalReceived + selectedCluster.totalSent).toFixed(4)))}
+                        </p>
+                      </div>
+                      <div className="rounded border border-line bg-panel p-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Active Alerts</p>
+                        <p className={cn("mt-0.5 font-mono text-base font-bold tabular-nums", selectedCluster.activeAlertCount > 0 ? "text-red-600" : "text-fg")}>
+                          {selectedCluster.activeAlertCount || 0}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. REPRESENTATIVE ADDRESS */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle font-sans">
+                        Representative Address
+                      </p>
+                      <span className="text-[10px] text-fg-subtle font-sans italic">
+                        Selected by graph topology
+                      </span>
+                    </div>
                     <div className="mt-1 flex items-center justify-between rounded border border-line bg-panel-2 p-2.5">
                       <MonoId value={selectedCluster.leadAddress} head={10} tail={8} />
                       <button
                         type="button"
                         onClick={() => navigate(`/investigation/${selectedCluster.leadAddress}?entityType=wallet`)}
-                        className="text-xs font-semibold text-accent hover:underline font-sans"
+                        className="text-xs font-semibold text-accent hover:underline font-sans ml-2 shrink-0"
                       >
                         Investigate →
                       </button>
                     </div>
                   </div>
 
-                  {/* Co-spending Associated Addresses List */}
+                  {/* 5. ASSOCIATED CLUSTER ADDRESSES */}
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle font-sans mb-2">
-                      Associated Cluster Addresses ({selectedCluster.associatedAddresses.length})
+                      ASSOCIATED CLUSTER ADDRESSES ({selectedCluster.associatedAddresses.length})
                     </p>
                     <div className="max-h-48 overflow-y-auto rounded border border-line divide-y divide-line-soft">
                       {selectedCluster.associatedAddresses.map((addr) => (
@@ -306,7 +407,7 @@ export function EntitiesPage() {
                           <button
                             type="button"
                             onClick={() => navigate(`/investigation/${addr}?entityType=wallet`)}
-                            className="text-[11px] font-medium text-accent hover:underline font-sans"
+                            className="text-[11px] font-medium text-accent hover:underline font-sans ml-2 shrink-0"
                           >
                             Profile
                           </button>
@@ -319,8 +420,8 @@ export function EntitiesPage() {
             ) : (
               <Panel>
                 <EmptyState
-                  title="Select a Cluster"
-                  description="Click on any cluster row in the registry to inspect its co-spending composition."
+                  title="Select a cluster to view its forensic summary."
+                  description="Click on any cluster row in the registry to inspect its inferred behavioral composition."
                 />
               </Panel>
             )}
