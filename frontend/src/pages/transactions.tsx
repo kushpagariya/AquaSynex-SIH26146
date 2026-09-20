@@ -37,7 +37,9 @@ export function TransactionsPage() {
 
   const initialBehavior = searchParams.get("behavior") || "all"
   const initialSeverity = (searchParams.get("severity") as Severity) || "all"
-  const initialSearch = searchParams.get("txid") || searchParams.get("address") || ""
+  const initialSearch = searchParams.get("txid") || ""
+  const initialIp = searchParams.get("ip") || ""
+  const initialAddress = searchParams.get("address") || ""
 
   const [data, setData] = useState<FilteredTransactionsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -46,6 +48,8 @@ export function TransactionsPage() {
 
   // Filter States
   const [searchTxid, setSearchTxid] = useState(initialSearch)
+  const [ipFilter, setIpFilter] = useState(initialIp)
+  const [addressFilter, setAddressFilter] = useState(initialAddress)
   const [selectedSeverity, setSelectedSeverity] = useState<Severity | "all">(initialSeverity)
   const [selectedBehavior, setSelectedBehavior] = useState<string>(initialBehavior)
   const [minRisk, setMinRisk] = useState(0)
@@ -55,6 +59,16 @@ export function TransactionsPage() {
   const [pageSize, setPageSize] = useState(25)
   const [countryFilter, setCountryFilter] = useState("all")
   const [asnFilter, setAsnFilter] = useState("all")
+
+  // Synchronize state if URL query params change
+  useEffect(() => {
+    const urlIp = searchParams.get("ip") || ""
+    const urlAddr = searchParams.get("address") || ""
+    const urlTxid = searchParams.get("txid") || ""
+    if (urlIp !== ipFilter) setIpFilter(urlIp)
+    if (urlAddr !== addressFilter) setAddressFilter(urlAddr)
+    if (urlTxid !== searchTxid) setSearchTxid(urlTxid)
+  }, [searchParams])
 
   function loadTransactions() {
     setLoading(true)
@@ -74,6 +88,8 @@ export function TransactionsPage() {
       searchTxid: searchTxid.trim() || undefined,
       country: countryFilter === "all" ? undefined : countryFilter,
       asn: asnFilter === "all" ? undefined : asnFilter,
+      ip: ipFilter.trim() || undefined,
+      address: addressFilter.trim() || undefined,
     })
       .then((res) => {
         setData(res)
@@ -88,7 +104,7 @@ export function TransactionsPage() {
   useEffect(() => {
     loadTransactions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, sortKey, selectedSeverity, selectedBehavior, minRisk, maxRisk, countryFilter, asnFilter])
+  }, [page, pageSize, sortKey, selectedSeverity, selectedBehavior, minRisk, maxRisk, countryFilter, asnFilter, ipFilter, addressFilter])
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -101,6 +117,8 @@ export function TransactionsPage() {
 
   function handleResetFilters() {
     setSearchTxid("")
+    setIpFilter("")
+    setAddressFilter("")
     setSelectedSeverity("all")
     setSelectedBehavior("all")
     setMinRisk(0)
@@ -154,7 +172,7 @@ export function TransactionsPage() {
               >
                 Search
               </button>
-              {(searchTxid || selectedSeverity !== "all" || selectedBehavior !== "all" || minRisk > 0 || countryFilter !== "all" || asnFilter !== "all") ? (
+              {(searchTxid || ipFilter || addressFilter || selectedSeverity !== "all" || selectedBehavior !== "all" || minRisk > 0 || countryFilter !== "all" || asnFilter !== "all") ? (
                 <button
                   type="button"
                   onClick={handleResetFilters}
@@ -164,6 +182,48 @@ export function TransactionsPage() {
                 </button>
               ) : null}
             </form>
+
+            {/* Active Server-side Filter Badges */}
+            {(ipFilter || addressFilter) ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                {ipFilter && (
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-3 py-0.5 text-blue-900 font-sans text-xs">
+                    <span>Peer IP Filter: <strong className="font-mono">{ipFilter}</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIpFilter("")
+                        const next = new URLSearchParams(searchParams)
+                        next.delete("ip")
+                        setSearchParams(next)
+                      }}
+                      className="ml-1 rounded-full px-1 text-blue-700 hover:text-blue-900 font-bold"
+                      title="Clear IP filter"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                {addressFilter && (
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-300 px-3 py-0.5 text-slate-800 font-sans text-xs">
+                    <span>Address Filter: <strong className="font-mono">{addressFilter}</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddressFilter("")
+                        const next = new URLSearchParams(searchParams)
+                        next.delete("address")
+                        setSearchParams(next)
+                      }}
+                      className="ml-1 rounded-full px-1 text-slate-700 hover:text-slate-900 font-bold"
+                      title="Clear Address filter"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             {/* Compact Filter Controls Grid */}
             <div className="grid grid-cols-1 gap-4 border-t border-line-soft pt-4 sm:grid-cols-2 lg:grid-cols-4 text-xs font-sans">

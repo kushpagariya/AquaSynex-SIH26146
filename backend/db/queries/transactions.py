@@ -37,6 +37,9 @@ def list_transactions(
     min_value_btc: Optional[str] = None,
     max_value_btc: Optional[str] = None,
     analysis_id: Optional[str] = None,
+    ip: Optional[str] = None,
+    address: Optional[str] = None,
+    txid: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Query transactions for a dataset with filters, sorting, and pagination."""
     page, page_size = validate_and_normalize_pagination(page, page_size)
@@ -127,6 +130,49 @@ def list_transactions(
 
     if min_sat is not None and max_sat is not None and min_sat > max_sat:
         raise InvalidFilterValueError("minValueBtc must be <= maxValueBtc", {"minValueBtc": min_value_btc, "maxValueBtc": max_value_btc})
+
+    # Optional server-side IP filter (via network_events semi-join)
+    if ip:
+        clean_ip = ip.strip()
+        if clean_ip:
+            where_clauses.append(
+                """EXISTS (
+                    SELECT 1 FROM network_events ne
+                    WHERE ne.dataset_id = t.dataset_id
+                      AND ne.transaction_id = t.transaction_id
+                      AND (ne.src_ip = ? OR ne.dst_ip = ?)
+                )"""
+            )
+            where_params.extend([clean_ip, clean_ip])
+
+    # Optional server-side address filter (via inputs/outputs semi-joins)
+    if address:
+        clean_addr = address.strip()
+        if clean_addr:
+            where_clauses.append(
+                """(
+                    EXISTS (
+                        SELECT 1 FROM transaction_inputs ti
+                        WHERE ti.dataset_id = t.dataset_id
+                          AND ti.transaction_id = t.transaction_id
+                          AND ti.input_address = ?
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM transaction_outputs tout
+                        WHERE tout.dataset_id = t.dataset_id
+                          AND tout.transaction_id = t.transaction_id
+                          AND tout.output_address = ?
+                    )
+                )"""
+            )
+            where_params.extend([clean_addr, clean_addr])
+
+    # Optional exact transaction_id filter
+    if txid:
+        clean_txid = txid.strip()
+        if clean_txid:
+            where_clauses.append("t.transaction_id = ?")
+            where_params.append(clean_txid)
 
     # ML join
     join_params: List[Any] = []

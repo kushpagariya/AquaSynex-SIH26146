@@ -5,6 +5,7 @@ import { EntitiesPage } from "@/pages/entities"
 import { DatasetPage } from "@/pages/dataset"
 import { GraphExplorerPage } from "@/pages/graph-explorer"
 import { NetworkPage } from "@/pages/network"
+import { NetworkMapPage } from "@/pages/network-map"
 import { BehaviorsPage } from "@/pages/behaviors"
 import { AlertsPage } from "@/pages/alerts"
 import { ModelPage } from "@/pages/model"
@@ -21,6 +22,7 @@ export default function App() {
       <Route path="/dataset" element={<DatasetPage />} />
       <Route path="/graph" element={<GraphExplorerPage />} />
       <Route path="/network" element={<NetworkPage />} />
+      <Route path="/network-map" element={<NetworkMapPage />} />
       <Route path="/behaviors" element={<BehaviorsPage />} />
       <Route path="/alerts" element={<AlertsPage />} />
       <Route path="/model" element={<ModelPage />} />

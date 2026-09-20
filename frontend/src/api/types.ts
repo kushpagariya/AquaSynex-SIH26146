@@ -340,3 +340,41 @@ export interface AlertsSummaryDTO {
   byType: Record<string, number>
 }
 
+// ── Network Intelligence & Offline GeoIP/ASN Map ─────────────
+
+export interface NetworkMapPoint {
+  ip: string
+  country?: string | null
+  countryCode?: string | null
+  region?: string | null
+  city?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  asn?: string | null
+  asName?: string | null
+  asDomain?: string | null
+  eventCount: number
+  transactionCount: number
+  sourceEventCount: number
+  destinationEventCount: number
+  firstSeen?: string | null
+  lastSeen?: string | null
+  isMapped: boolean
+}
+
+export interface NetworkMapMetrics {
+  totalIps: number
+  mappedIps: number
+  unmappedIps: number
+  uniqueCountries: number
+  uniqueAsns: number
+  totalEvents: number
+}
+
+export interface NetworkMapResponse {
+  datasetId: string
+  analysisId?: string | null
+  metrics: NetworkMapMetrics
+  points: NetworkMapPoint[]
+}
+

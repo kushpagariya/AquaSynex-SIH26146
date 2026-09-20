@@ -20,6 +20,7 @@ from backend.api.datasets import router as datasets_router
 from backend.api.graph import router as graph_router
 from backend.api.health import router as health_router
 from backend.api.models import router as models_router
+from backend.api.network import router as network_router
 from backend.api.results import router as results_router
 from backend.api.transactions import router as transactions_router
 from backend.config import settings
@@ -200,3 +201,4 @@ app.include_router(addresses_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(results_router, prefix="/api")
 app.include_router(models_router, prefix="/api")
+app.include_router(network_router, prefix="/api")

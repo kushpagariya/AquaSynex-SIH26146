@@ -9,6 +9,8 @@ from backend.services.analysis_service import AnalysisService
 from backend.services.alert_service import AlertService
 from backend.services.dataset_service import DatasetService
 from backend.services.graph_service import GraphService
+from backend.services.geoip_service import GeoIPService, get_geoip_service
+from backend.services.network_service import NetworkService
 from backend.services.result_service import ResultService
 from backend.services.transaction_service import TransactionService
 
@@ -45,4 +47,11 @@ def get_result_service(db: duckdb.DuckDBPyConnection = Depends(get_db)) -> Resul
 
 def get_alert_service(db: duckdb.DuckDBPyConnection = Depends(get_db)) -> AlertService:
     return AlertService(db)
+
+
+def get_network_service(
+    db: duckdb.DuckDBPyConnection = Depends(get_db),
+    geoip_service: GeoIPService = Depends(get_geoip_service),
+) -> NetworkService:
+    return NetworkService(db, geoip_service)
 

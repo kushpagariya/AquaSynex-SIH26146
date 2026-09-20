@@ -319,6 +319,9 @@ All fields optional. If `modelId` omitted, uses the default configured model.
 | `toTimestamp` | string | ISO 8601 datetime |
 | `minValueBtc` | string | Minimum total value (BTC decimal string) |
 | `analysisId` | string | Filter to transactions with ML results from this analysis |
+| `ip` | string | Filter transactions associated with this network IP (via network_events semi-join) |
+| `address` | string | Filter transactions involving this Bitcoin address (inputs or outputs) |
+| `txid` | string | Filter to specific transaction ID |
 
 **Response** (`200 OK`):
 ```json
@@ -465,5 +468,61 @@ All fields optional. If `modelId` omitted, uses the default configured model.
 
 ---
 
-*Last updated: 2026-09-11 | Status: PLANNED | Owner: Backend Owner + Frontend Owner (joint)*
+## 10. Network Intelligence & Offline GeoIP/ASN Map API
+
+### `GET /api/datasets/{datasetId}/network/map`
+
+**Alternative Route**: `GET /api/network/map?datasetId={datasetId}`
+
+**Purpose**: Retrieve aggregated network endpoints enriched with offline GeoIP and ASN metadata from local MMDB databases (`datasets/GeoLite2-City.mmdb` and `datasets/ipinfo_lite.mmdb`).
+
+**Query parameters**:
+| Parameter | Type | Description |
+|---|---|---|
+| `analysisId` | string | Optional analysis ID context |
+
+**Response** (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "datasetId": "uuid",
+    "analysisId": "uuid",
+    "metrics": {
+      "totalIps": 180,
+      "mappedIps": 165,
+      "unmappedIps": 15,
+      "uniqueCountries": 28,
+      "uniqueAsns": 42,
+      "totalEvents": 520
+    },
+    "points": [
+      {
+        "ip": "104.26.184.134",
+        "country": "United States",
+        "countryCode": "US",
+        "region": "California",
+        "city": "San Francisco",
+        "latitude": 37.751,
+        "longitude": -97.822,
+        "asn": "AS13335",
+        "asName": "Cloudflare, Inc.",
+        "asDomain": "cloudflare.com",
+        "eventCount": 42,
+        "transactionCount": 38,
+        "sourceEventCount": 30,
+        "destinationEventCount": 12,
+        "firstSeen": "2026-09-11T10:00:00+00:00",
+        "lastSeen": "2026-09-11T12:00:00+00:00",
+        "isMapped": true
+      }
+    ]
+  },
+  "meta": { "timestamp": "...", "requestId": "..." }
+}
+```
+
+---
+
+*Last updated: 2026-09-20 | Status: IMPLEMENTED | Owner: Backend Owner + Frontend Owner (joint)*
 *References: [request-response-schemas.md](./request-response-schemas.md) | [error-handling.md](./error-handling.md) | [validation-rules.md](./validation-rules.md)*

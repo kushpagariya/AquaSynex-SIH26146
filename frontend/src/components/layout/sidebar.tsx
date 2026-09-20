@@ -12,6 +12,7 @@ import {
   Fingerprint,
   BrainCircuit,
   Shield,
+  Globe,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getHealth } from "@/api"
@@ -43,6 +44,7 @@ const navSections: NavSection[] = [
       { to: "/entities", label: "Entities", icon: Users },
       { to: "/graph", label: "Graph Explorer", icon: Share2 },
       { to: "/network", label: "Network Intelligence", icon: Network },
+      { to: "/network-map", label: "Network Map", icon: Globe },
     ],
   },
   {

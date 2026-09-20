@@ -22,6 +22,9 @@ import {
   listAlerts,
   getAlertsSummary,
   updateAlertStatus as apiUpdateAlertStatus,
+  getNetworkMap,
+  type NetworkMapResponse,
+  type NetworkMapPoint,
 } from "@/api"
 import type {
   Alert,
@@ -1281,6 +1284,8 @@ export interface TransactionFilterParams {
   country?: string
   asn?: string
   searchTxid?: string
+  ip?: string
+  address?: string
   status?: string
 }
 
@@ -1319,11 +1324,19 @@ export async function getTransactionsDetailed(
     }
   }
 
-  // Fetch transaction list from API
+  // Determine whether client-side in-memory filtering is needed for non-indexed fields
+  const requiresClientFetchAll = Boolean(
+    (params.behavior && params.behavior !== "all") ||
+    (params.country && params.country !== "all") ||
+    (params.asn && params.asn !== "all") ||
+    (params.searchTxid && !params.ip && params.searchTxid.length < 64)
+  )
+
+  // Fetch transaction list from API (server-side filtering for ip, address, txid, risk, timestamps)
   const apiSortBy = params.sortBy === "amount" ? "totalValueSatoshi" : params.sortBy || "timestamp"
   const txRes = await listTransactions(datasetId, {
-    page: params.behavior || params.country || params.asn || params.searchTxid ? 1 : page,
-    pageSize: params.behavior || params.country || params.asn || params.searchTxid ? 200 : pageSize,
+    page: requiresClientFetchAll ? 1 : page,
+    pageSize: requiresClientFetchAll ? 200 : pageSize,
     sortBy: apiSortBy,
     sortDir: params.sortDir || "desc",
     riskLevel: params.riskLevel,
@@ -1334,6 +1347,9 @@ export async function getTransactionsDetailed(
     minValueBtc: params.minValueBtc,
     maxValueBtc: params.maxValueBtc,
     analysisId,
+    ip: params.ip,
+    address: params.address,
+    txid: params.searchTxid && !params.ip && params.searchTxid.length === 64 ? params.searchTxid : undefined,
   })
 
   const rawList = txRes.data || []
@@ -1407,8 +1423,13 @@ export async function getTransactionsDetailed(
     filtered = filtered.filter((t) => t.network.asn === params.asn)
   }
 
-  const isClientFiltered = Boolean(params.behavior || params.country || params.asn || params.searchTxid)
-  const totalItems = isClientFiltered ? filtered.length : (txRes.meta?.pagination?.totalItems || filtered.length)
+  const isClientFiltered = Boolean(
+    (params.behavior && params.behavior !== "all") ||
+    (params.country && params.country !== "all") ||
+    (params.asn && params.asn !== "all") ||
+    (params.searchTxid && !params.ip && params.searchTxid.length < 64),
+  )
+  const totalItems = isClientFiltered ? filtered.length : (txRes.meta?.pagination?.totalItems ?? filtered.length)
 
   const finalPage = isClientFiltered
     ? filtered.slice((page - 1) * pageSize, page * pageSize)
@@ -1813,6 +1834,22 @@ export async function getNetworkIntelligence(): Promise<NetworkIntelligenceData>
     suspiciousEvents,
     topIps,
     topAsns,
+  }
+}
+
+/**
+ * Retrieves aggregated network intelligence and geographic map points enriched via local MMDBs.
+ */
+export async function getNetworkMapData(): Promise<NetworkMapResponse | null> {
+  const { datasetId, analysisId } = await getActiveContext()
+  if (!datasetId) return null
+
+  try {
+    const res = await getNetworkMap(datasetId, analysisId)
+    return res.data || null
+  } catch (err) {
+    console.error("Failed to load network map data:", err)
+    throw err
   }
 }
 
