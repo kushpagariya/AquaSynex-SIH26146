@@ -5,7 +5,6 @@ import {
   Search,
   RefreshCw,
   ShieldAlert,
-  Info,
   ChevronRight,
   Share2,
   Bell,
@@ -76,15 +75,7 @@ export function EntitiesPage() {
 
   return (
     <AppLayout title="Inferred Behavioral Clusters">
-      <div className="space-y-6">
-        {/* Concise Behavioral Notice */}
-        <div className="flex items-center gap-2.5 rounded border border-line bg-panel px-4 py-2.5 text-xs text-fg-muted font-sans shadow-2xs">
-          <Info className="size-3.5 shrink-0 text-accent" />
-          <span>
-            Clusters are inferred from transaction and graph relationships and do not establish ownership.
-          </span>
-        </div>
-
+      <div className="space-y-5">
         {/* Filter & Search Bar */}
         <Panel>
           <div className="flex flex-wrap items-center justify-between gap-4 p-4 font-sans">
@@ -128,10 +119,10 @@ export function EntitiesPage() {
           </div>
         </Panel>
 
-        {/* Main Grid: Clusters Register & Detailed Split Pane */}
+        {/* Main Grid: Clusters Register & Detailed Split Pane (8 Cols Table / 4 Cols Detail) */}
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-          {/* Clusters Table (7 Cols on desktop) */}
-          <div className="xl:col-span-7">
+          {/* Clusters Table (8 Cols on desktop) */}
+          <div className="xl:col-span-8">
             <Panel>
               <PanelHeader
                 title="Inferred Behavioral Clusters"
@@ -152,14 +143,14 @@ export function EntitiesPage() {
                   <table className="w-full border-collapse text-left font-sans">
                     <thead>
                       <tr className="border-b border-line bg-panel-2/60 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle select-none">
-                        <th className="px-5 py-3">Cluster ID</th>
-                        <th className="px-4 py-3">Addresses</th>
-                        <th className="px-4 py-3">Transactions</th>
-                        <th className="px-4 py-3">Volume</th>
-                        <th className="px-4 py-3">Risk</th>
-                        <th className="px-4 py-3">Dominant Behavior</th>
-                        <th className="px-4 py-3">Alerts</th>
-                        <th className="px-4 py-3 text-right" />
+                        <th className="px-3.5 py-2.5">Cluster ID</th>
+                        <th className="px-3 py-2.5">Addresses</th>
+                        <th className="px-3 py-2.5">Transactions</th>
+                        <th className="px-3 py-2.5">Volume</th>
+                        <th className="px-3 py-2.5">Risk</th>
+                        <th className="px-3 py-2.5">Dominant Behavior</th>
+                        <th className="px-3 py-2.5">Alerts</th>
+                        <th className="px-2 py-2.5 text-right" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line-soft text-xs">
@@ -175,29 +166,29 @@ export function EntitiesPage() {
                               isSelected ? "bg-accent-soft/40 border-l-2 border-l-accent" : "hover:bg-accent-soft/20",
                             )}
                           >
-                            <td className="px-5 py-3.5 font-mono text-xs font-semibold text-fg">
+                            <td className="px-3.5 py-2.5 font-mono text-xs font-semibold text-fg">
                               {c.clusterId}
                             </td>
-                            <td className="px-4 py-3.5 font-mono text-xs tabular-nums text-fg-muted">
+                            <td className="px-3 py-2.5 font-mono text-xs tabular-nums text-fg-muted">
                               {formatNumber(c.clusterSize)}
                             </td>
-                            <td className="px-4 py-3.5 font-mono text-xs tabular-nums text-fg-muted">
+                            <td className="px-3 py-2.5 font-mono text-xs tabular-nums text-fg-muted">
                               {formatNumber(c.transactionCount)}
                             </td>
-                            <td className="whitespace-nowrap px-4 py-3.5 font-sans font-semibold tabular-nums text-fg">
+                            <td className="whitespace-nowrap px-3 py-2.5 font-sans font-semibold tabular-nums text-fg">
                               {formatBtc(totalVol)}
                             </td>
-                            <td className="px-4 py-3.5 font-mono font-bold tabular-nums">
+                            <td className="px-3 py-2.5 font-mono font-bold tabular-nums">
                               <span style={{ color: severityColorVar(c.severity) }}>
                                 {c.highestRisk}
                               </span>
                             </td>
-                            <td className="px-4 py-3.5">
+                            <td className="px-3 py-2.5">
                               <span className="inline-flex items-center rounded border border-line bg-panel-2 px-2 py-0.5 text-[11px] font-medium text-fg">
                                 {c.dominantBehavior}
                               </span>
                             </td>
-                            <td className="px-4 py-3.5">
+                            <td className="px-3 py-2.5">
                               <span
                                 className={cn(
                                   "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium font-sans",
@@ -212,7 +203,7 @@ export function EntitiesPage() {
                                   : `${c.totalAlertCount || 0} alerts`}
                               </span>
                             </td>
-                            <td className="px-4 py-3.5 text-right text-fg-subtle">
+                            <td className="px-2 py-2.5 text-right text-fg-subtle">
                               <ChevronRight className="size-4" />
                             </td>
                           </tr>
@@ -225,8 +216,8 @@ export function EntitiesPage() {
             </Panel>
           </div>
 
-          {/* Cluster Inspector Split Pane (5 Cols on desktop) */}
-          <div className="xl:col-span-5">
+          {/* Cluster Inspector Split Pane (4 Cols on desktop) */}
+          <div className="xl:col-span-4">
             {selectedCluster ? (
               <Panel className="sticky top-6">
                 <PanelHeader

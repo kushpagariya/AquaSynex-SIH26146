@@ -371,10 +371,18 @@ export interface NetworkMapMetrics {
   totalEvents: number
 }
 
+export interface NetworkMapEdge {
+  srcIp: string
+  dstIp: string
+  eventCount: number
+  transactionCount: number
+}
+
 export interface NetworkMapResponse {
   datasetId: string
   analysisId?: string | null
   metrics: NetworkMapMetrics
   points: NetworkMapPoint[]
+  edges: NetworkMapEdge[]
 }
 

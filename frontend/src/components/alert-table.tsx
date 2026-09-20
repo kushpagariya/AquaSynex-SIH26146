@@ -8,6 +8,7 @@ import {
   StatusBadge,
   severityColorVar,
 } from "@/components/ui/badges"
+import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/utils"
 
 export function AlertTable({
@@ -26,18 +27,18 @@ export function AlertTable({
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="border-b border-line bg-panel-2/60 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle select-none">
-            <th className="px-5 py-3 font-sans">Entity / TXID</th>
+            <th className={cn("font-sans", compact ? "px-3 py-2" : "px-5 py-3")}>Entity / TXID</th>
             {!compact ? <th className="px-4 py-3 font-sans">Type</th> : null}
-            <th className="px-4 py-3 font-sans">Risk</th>
-            <th className="px-4 py-3 font-sans">Severity</th>
+            <th className={cn("font-sans", compact ? "px-2.5 py-2" : "px-4 py-3")}>Risk</th>
+            <th className={cn("font-sans", compact ? "px-2.5 py-2" : "px-4 py-3")}>Severity</th>
             {!compact ? (
               <th className="px-4 py-3 font-sans">Reason / Typology</th>
             ) : null}
-            <th className="px-4 py-3 font-sans">Time</th>
+            <th className={cn("font-sans", compact ? "px-2.5 py-2" : "px-4 py-3")}>Time</th>
             {!compact ? (
               <th className="px-4 py-3 font-sans">Status</th>
             ) : null}
-            <th className="px-4 py-3 text-right font-sans">Action</th>
+            <th className={cn("text-right font-sans", compact ? "px-3 py-2" : "px-4 py-3")}>Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line-soft text-xs">
@@ -47,10 +48,10 @@ export function AlertTable({
               onClick={() => navigate(`/investigation/${a.entityId}?entityType=${a.entityType}`)}
               className="group cursor-pointer transition-colors hover:bg-accent-soft/30"
             >
-              <td className="px-5 py-3.5">
-                <div className="flex items-center gap-2">
+              <td className={compact ? "px-3 py-2.5" : "px-5 py-3.5"}>
+                <div className="flex items-center gap-1.5">
                   <span className="font-mono text-xs font-medium text-fg">
-                    {a.entityLabel.length > 20 ? `${a.entityLabel.slice(0, 16)}…` : a.entityLabel}
+                    {a.entityLabel.length > 18 ? `${a.entityLabel.slice(0, 14)}…` : a.entityLabel}
                   </span>
                   <EntityTypeBadge type={a.entityType} />
                 </div>
@@ -60,7 +61,7 @@ export function AlertTable({
                   <AlertTypeBadge type={a.alertType} />
                 </td>
               ) : null}
-              <td className="px-4 py-3.5">
+              <td className={compact ? "px-2.5 py-2.5" : "px-4 py-3.5"}>
                 <span
                   className="font-mono font-bold tabular-nums text-xs"
                   style={{ color: severityColorVar(a.severity) }}
@@ -68,7 +69,7 @@ export function AlertTable({
                   {a.riskScore}
                 </span>
               </td>
-              <td className="px-4 py-3.5">
+              <td className={compact ? "px-2.5 py-2.5" : "px-4 py-3.5"}>
                 <SeverityBadge severity={a.severity} />
               </td>
               {!compact ? (
@@ -76,7 +77,7 @@ export function AlertTable({
                   {a.reason}
                 </td>
               ) : null}
-              <td className="whitespace-nowrap px-4 py-3.5 font-mono text-[11px] text-fg-subtle">
+              <td className={cn("whitespace-nowrap font-mono text-[11px] text-fg-subtle", compact ? "px-2.5 py-2.5" : "px-4 py-3.5")}>
                 {formatTime(a.timestamp)}
               </td>
               {!compact ? (

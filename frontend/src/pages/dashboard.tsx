@@ -37,7 +37,7 @@ export function DashboardPage() {
         setBehaviors(b)
       })
       .catch((err) => {
-        setErrorMsg(err instanceof Error ? err.message : "Failed to connect to AquaSynex backend")
+        setErrorMsg(err instanceof Error ? err.message : "Failed to connect to TraceGrid backend")
       })
   }, [])
 

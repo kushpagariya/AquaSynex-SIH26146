@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 export function AnomalyOverview({ series }: { series: AnomalyBucket[] }) {
   if (!series || series.length === 0) {
     return (
-      <div className="flex h-52 w-full items-center justify-center text-xs text-fg-subtle">
+      <div className="flex h-56 w-full items-center justify-center text-xs text-fg-subtle">
         No transaction activity recorded in this dataset.
       </div>
     )
@@ -13,7 +13,7 @@ export function AnomalyOverview({ series }: { series: AnomalyBucket[] }) {
   const maxTx = Math.max(...series.map((s) => s.transactions), 1)
 
   return (
-    <div className="flex h-52 w-full min-w-0 items-stretch gap-1.5 sm:gap-2 px-1 pt-4 pb-1">
+    <div className="flex h-56 w-full min-w-0 items-stretch gap-1.5 sm:gap-2 px-1 pt-4 pb-1">
       {series.map((bucket, idx) => {
         const txPct = (bucket.transactions / maxTx) * 100
         const anomalyPct =

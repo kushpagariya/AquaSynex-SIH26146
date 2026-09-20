@@ -43,6 +43,7 @@ export function InvestigationPage() {
   const { entityId } = useParams<{ entityId: string }>()
   const [searchParams] = useSearchParams()
   const entityTypeParam = searchParams.get("entityType") || searchParams.get("type") || undefined
+  const ipParam = searchParams.get("ip") || undefined
   const navigate = useNavigate()
   const [data, setData] = useState<Investigation | null>(null)
   const [notFound, setNotFound] = useState(false)
@@ -50,6 +51,12 @@ export function InvestigationPage() {
   const [selection, setSelection] = useState<GraphSelection | null>(null)
 
   useEffect(() => {
+    // Support direct IP investigation via ?ip= query param
+    if (ipParam && !entityId) {
+      navigate(`/investigation/${encodeURIComponent(ipParam)}?entityType=ip`, { replace: true })
+      return
+    }
+
     if (!entityId) {
       setData(null)
       setNotFound(false)
@@ -78,7 +85,7 @@ export function InvestigationPage() {
       .catch((err) => {
         setErrorMsg(err instanceof Error ? err.message : "Failed to load investigation")
       })
-  }, [entityId, entityTypeParam, navigate])
+  }, [entityId, entityTypeParam, ipParam, navigate])
 
   return (
     <AppLayout title="Case Investigation">
@@ -188,6 +195,10 @@ export function InvestigationPage() {
                     if (data.entity.type === "transaction") {
                       navigate(
                         `/transactions?txid=${encodeURIComponent(data.entity.id)}`,
+                      )
+                    } else if (data.entity.type === "ip") {
+                      navigate(
+                        `/transactions?ip=${encodeURIComponent(data.entity.id)}`,
                       )
                     } else {
                       navigate(

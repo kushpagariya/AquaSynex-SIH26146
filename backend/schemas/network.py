@@ -37,6 +37,15 @@ class NetworkMapMetrics(CamelModel):
     total_events: int = 0
 
 
+class NetworkMapEdge(CamelModel):
+    """An aggregated directional connection between two endpoints."""
+
+    src_ip: str
+    dst_ip: str
+    event_count: int = 0
+    transaction_count: int = 0
+
+
 class NetworkMapResponse(CamelModel):
     """Canonical response payload for the network map endpoint."""
 
@@ -44,3 +53,4 @@ class NetworkMapResponse(CamelModel):
     analysis_id: Optional[str] = None
     metrics: NetworkMapMetrics
     points: List[NetworkMapPoint] = []
+    edges: List[NetworkMapEdge] = []

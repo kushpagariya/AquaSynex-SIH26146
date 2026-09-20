@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Globe2,
@@ -7,7 +7,6 @@ import {
   Search,
   RotateCcw,
   ExternalLink,
-  Info,
   MapPin,
   ShieldCheck,
   AlertCircle,
@@ -21,7 +20,7 @@ import { MonoId } from "@/components/ui/mono-id"
 import { LoadingState, ErrorState, EmptyState } from "@/components/ui/states"
 import { getNetworkMapData } from "@/data/service"
 import type { NetworkMapPoint, NetworkMapResponse } from "@/api/types"
-import { OfflineLeafletMap } from "@/components/network/offline-leaflet-map"
+import { NetworkGlobe } from "@/components/network/network-globe"
 import { formatNumber, cn } from "@/lib/utils"
 
 export function NetworkMapPage() {
@@ -38,6 +37,10 @@ export function NetworkMapPage() {
 
   // Selected Endpoint state
   const [selectedPoint, setSelectedPoint] = useState<NetworkMapPoint | null>(null)
+
+  const handleSelectPoint = useCallback((pt: NetworkMapPoint) => {
+    setSelectedPoint(pt)
+  }, [])
 
   function loadData() {
     setLoading(true)
@@ -162,18 +165,6 @@ export function NetworkMapPage() {
   return (
     <AppLayout title="Network Map">
       <div className="space-y-5 font-sans">
-        {/* Context Information Banner */}
-        <div className="rounded border border-line bg-panel p-3 shadow-sm text-xs">
-          <div className="flex items-start gap-2.5">
-            <Info className="size-4 shrink-0 text-[#173B63] mt-0.5" />
-            <div className="flex-1 text-fg-muted leading-relaxed">
-              <strong className="font-semibold text-fg">Offline GeoIP & Routing Intelligence:</strong> Aggregated
-              Bitcoin P2P broadcast propagation vectors enriched offline via MaxMind GeoLite2-City and IPinfo Lite MMDBs.
-              No external APIs or remote tile servers are contacted at runtime.
-            </div>
-          </div>
-        </div>
-
         {/* Summary Metrics Bar */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <div className="rounded-lg border border-line bg-panel p-3.5 shadow-sm">
@@ -296,16 +287,17 @@ export function NetworkMapPage() {
           <div className="lg:col-span-2 space-y-4">
             <Panel className="overflow-hidden">
               <PanelHeader
-                title="Geographic Node Distribution"
-                subtitle="Local vector projection rendered via Leaflet"
+                title="3D Global Network Intelligence"
+                subtitle="Interactive 3D Earth topology and directional traffic flows rendered offline"
                 icon={<Globe2 className="size-4" />}
               />
               <div className="p-3">
-                <OfflineLeafletMap
+                <NetworkGlobe
                   points={filteredPoints}
+                  edges={data.edges ?? []}
                   selectedIp={selectedPoint?.ip || null}
-                  onSelectPoint={(pt) => setSelectedPoint(pt)}
-                  className="h-[520px]"
+                  onSelectPoint={handleSelectPoint}
+                  className="h-[540px]"
                 />
               </div>
             </Panel>

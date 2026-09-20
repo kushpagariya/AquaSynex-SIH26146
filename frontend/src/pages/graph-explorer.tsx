@@ -91,7 +91,7 @@ export function GraphExplorerPage() {
   const cyRef = useRef<Core | null>(null)
 
   // Mode: "investigation" (focused neighborhood) vs "full" (full connections)
-  const [viewMode, setViewMode] = useState<"investigation" | "full">("investigation")
+  const [viewMode, setViewMode] = useState<"investigation" | "full">(focusParam ? "investigation" : "full")
 
   // Graph data & query state
   const [rawGraph, setRawGraph] = useState<GraphExport | null>(null)
@@ -222,11 +222,15 @@ export function GraphExplorerPage() {
     [viewMode, suspiciousOnly],
   )
 
-  // Trigger loading when focusParam changes
+  // Trigger loading when focusParam changes or on mount
   useEffect(() => {
     if (focusParam) {
+      setViewMode("investigation")
       setSearchQuery(focusParam)
-      loadGraphData(focusParam, currentHops, viewMode, suspiciousOnly)
+      loadGraphData(focusParam, currentHops, "investigation", suspiciousOnly)
+    } else {
+      setViewMode("full")
+      loadGraphData(undefined, currentHops, "full", suspiciousOnly)
     }
   }, [focusParam])
 
@@ -342,14 +346,24 @@ export function GraphExplorerPage() {
       const isHighRisk = lvl === "high" || lvl === "critical" || score >= 0.50
 
       // Color mapping with restrained semantic emphasis
-      let nodeColor = typeColors[nType] || "#3B6D9C"
-      if (lvl === "critical" || score >= 0.80) {
-        nodeColor = severityColors.critical
-      } else if (lvl === "high" || score >= 0.50) {
-        nodeColor = severityColors.high
-      } else if (lvl === "medium" || score >= 0.25) {
-        nodeColor = severityColors.medium
+      let nodeColor = "#64748B" // Neutral / default fallback
+      const hasRisk = (n.riskLevel && n.riskLevel.trim() !== "") || (n.riskScore !== undefined && n.riskScore !== null)
+      if (hasRisk) {
+        if (lvl === "critical" || score >= 0.80) {
+          nodeColor = severityColors.critical
+        } else if (lvl === "high" || score >= 0.50) {
+          nodeColor = severityColors.high
+        } else if (lvl === "medium" || score >= 0.25) {
+          nodeColor = severityColors.medium
+        } else {
+          nodeColor = severityColors.low
+        }
+      } else if (typeColors[nType]) {
+        nodeColor = typeColors[nType]
       }
+
+      const borderColor =
+        nType === "transaction" ? "#0F172A" : nType === "cluster" ? "#312E81" : "#1E3A8A"
 
       const displayLabel = n.label || `${n.id.slice(0, 8)}…`
 
@@ -361,6 +375,7 @@ export function GraphExplorerPage() {
           riskScore: n.riskScore,
           riskLevel: n.riskLevel,
           color: nodeColor,
+          borderColor: borderColor,
           shape: nType === "transaction" ? "round-rectangle" : nType === "cluster" ? "hexagon" : "ellipse",
           isFocus: 0,
           isSelected: 0,
@@ -404,7 +419,7 @@ export function GraphExplorerPage() {
           style: {
             "background-color": "data(color)",
             label: "data(label)",
-            color: "#1E293B",
+            color: "#0F172A",
             "font-size": "10px",
             "font-family": "Inter, monospace, sans-serif",
             "font-weight": "bold",
@@ -414,8 +429,8 @@ export function GraphExplorerPage() {
             "text-outline-width": 2,
             width: 32,
             height: 32,
-            "border-width": 1.5,
-            "border-color": "#FFFFFF",
+            "border-width": 2,
+            "border-color": "data(borderColor)",
             shape: "data(shape)" as never,
           },
         },
@@ -778,6 +793,34 @@ export function GraphExplorerPage() {
                 Reload
               </button>
 
+              {/* Zoom and Navigation Controls moved to top toolbar */}
+              <div className="flex items-center rounded border border-line bg-panel p-0.5">
+                <button
+                  type="button"
+                  onClick={() => zoomBy(1.2)}
+                  className="rounded p-1 text-fg-muted hover:bg-gray-100 hover:text-fg transition-colors"
+                  title="Zoom in"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => zoomBy(0.8)}
+                  className="rounded p-1 text-fg-muted hover:bg-gray-100 hover:text-fg transition-colors"
+                  title="Zoom out"
+                >
+                  <Minus className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={fit}
+                  className="rounded px-2 py-0.5 text-xs font-semibold text-fg-muted hover:bg-gray-100 hover:text-fg transition-colors"
+                  title="Fit view"
+                >
+                  Fit
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setIsFullscreen(!isFullscreen)}
@@ -937,66 +980,39 @@ export function GraphExplorerPage() {
 
             {/* Compact Legend Overlay */}
             {rawGraph && !loading && (
-              <div className="absolute bottom-3 left-3 z-10 rounded border border-line bg-white/90 p-2.5 shadow-sm text-[10px] backdrop-blur-xs space-y-1.5 font-sans">
-                <div className="font-bold text-fg-subtle uppercase tracking-wider text-[9px]">Entity Legend</div>
+              <div className="absolute bottom-3 left-3 z-10 rounded border border-line bg-white/95 p-3 shadow-md text-xs backdrop-blur-xs space-y-2 font-sans">
+                <div className="font-bold text-fg-subtle uppercase tracking-wider text-[10px]">Entity & Risk Legend</div>
                 <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1 font-medium text-fg">
-                    <span className="size-2.5 rounded-full bg-[#3B6D9C] inline-block" /> Address
+                  <span className="flex items-center gap-1.5 font-medium text-fg">
+                    <span className="size-3 rounded-full bg-[#64748B] border border-[#1E3A8A] inline-block" /> Address (Circle)
                   </span>
-                  <span className="flex items-center gap-1 font-medium text-fg">
-                    <span className="size-2.5 rounded-xs bg-[#173B63] inline-block" /> Transaction
+                  <span className="flex items-center gap-1.5 font-medium text-fg">
+                    <span className="size-3 rounded-xs bg-[#64748B] border border-[#0F172A] inline-block" /> Transaction (Rectangle)
                   </span>
-                  <span className="flex items-center gap-1 font-medium text-fg">
-                    <span className="size-2.5 rotate-45 bg-[#4F46E5] inline-block" /> Cluster
-                  </span>
-                </div>
-                <div className="pt-1 border-t border-line-soft flex items-center gap-2.5 text-fg-muted">
-                  <span className="flex items-center gap-1">
-                    <span className="size-2 rounded-full bg-[#2F6B4F] inline-block" /> Low
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="size-2 rounded-full bg-[#A46A16] inline-block" /> Med
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="size-2 rounded-full bg-[#B85D1B] inline-block" /> High
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="size-2 rounded-full bg-[#A63D3D] inline-block" /> Crit
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="size-2 rounded-full border-2 border-[#0F172A] inline-block" /> Focus
+                  <span className="flex items-center gap-1.5 font-medium text-fg">
+                    <span className="size-3 rotate-45 bg-[#64748B] border border-[#312E81] inline-block" /> Cluster (Hexagon)
                   </span>
                 </div>
-              </div>
-            )}
-
-            {/* Canvas Zoom Controls Overlay */}
-            {rawGraph && !loading && (
-              <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1 rounded border border-line bg-white/90 p-1 shadow-sm backdrop-blur-xs">
-                <button
-                  type="button"
-                  onClick={() => zoomBy(1.2)}
-                  className="rounded p-1 text-fg-muted hover:bg-gray-100 hover:text-fg"
-                  title="Zoom in"
-                >
-                  <Plus className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => zoomBy(0.8)}
-                  className="rounded p-1 text-fg-muted hover:bg-gray-100 hover:text-fg"
-                  title="Zoom out"
-                >
-                  <Minus className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={fit}
-                  className="rounded p-1 text-fg-muted hover:bg-gray-100 hover:text-fg"
-                  title="Fit to screen"
-                >
-                  <Crosshair className="size-3.5" />
-                </button>
+                <div className="pt-1.5 border-t border-line-soft flex items-center gap-3 text-fg-muted">
+                  <span className="flex items-center gap-1 font-medium text-fg">
+                    <span className="size-2.5 rounded-full bg-[#2F6B4F] inline-block" /> Low Risk
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-fg">
+                    <span className="size-2.5 rounded-full bg-[#A46A16] inline-block" /> Medium Risk
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-fg">
+                    <span className="size-2.5 rounded-full bg-[#B85D1B] inline-block" /> High Risk
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-fg">
+                    <span className="size-2.5 rounded-full bg-[#A63D3D] inline-block" /> Critical Risk
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-fg">
+                    <span className="size-2.5 rounded-full bg-[#64748B] inline-block" /> Neutral
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-fg">
+                    <span className="size-2.5 rounded-full border-2 border-[#0F172A] inline-block" /> Focus
+                  </span>
+                </div>
               </div>
             )}
           </div>

@@ -29,7 +29,7 @@ export function Header({ title }: { title: string }) {
             <Shield className="size-3" />
           </span>
           <span className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-200">
-            AquaSynex
+            TraceGrid
           </span>
         </div>
         <span className="text-neutral-700">/</span>

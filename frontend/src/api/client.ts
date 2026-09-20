@@ -75,7 +75,7 @@ export async function apiFetch<T>(
     throw new ApiErrorClass(
       0,
       "NETWORK_ERROR",
-      `Unable to reach AquaSynex backend at ${baseUrl}. Ensure backend server is running. (${message})`,
+      `Unable to reach TraceGrid backend at ${baseUrl}. Ensure backend server is running. (${message})`,
     )
   }
 

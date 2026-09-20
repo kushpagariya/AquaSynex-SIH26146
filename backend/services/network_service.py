@@ -154,6 +154,33 @@ class NetworkService:
         total_ips = len(points)
         unmapped_ips = total_ips - mapped_ips
 
+        # 4. Aggregate directional network flow relationships between endpoints
+        edge_sql = """
+        SELECT
+            src_ip,
+            dst_ip,
+            COUNT(*) AS event_count,
+            COUNT(DISTINCT transaction_id) AS transaction_count
+        FROM network_events
+        WHERE dataset_id = ?
+          AND src_ip IS NOT NULL AND TRIM(src_ip) != ''
+          AND dst_ip IS NOT NULL AND TRIM(dst_ip) != ''
+          AND src_ip != dst_ip
+        GROUP BY src_ip, dst_ip
+        ORDER BY event_count DESC
+        LIMIT 500
+        """
+        edge_rows = self.conn.execute(edge_sql, [dataset_id]).fetchall()
+        edges = [
+            {
+                "src_ip": er[0],
+                "dst_ip": er[1],
+                "event_count": int(er[2] or 0),
+                "transaction_count": int(er[3] or 0),
+            }
+            for er in edge_rows
+        ]
+
         metrics = {
             "total_ips": total_ips,
             "mapped_ips": mapped_ips,
@@ -168,4 +195,6 @@ class NetworkService:
             "analysis_id": analysis_id,
             "metrics": metrics,
             "points": points,
+            "edges": edges,
         }
+
