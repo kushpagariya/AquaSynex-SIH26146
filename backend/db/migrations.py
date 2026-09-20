@@ -201,6 +201,7 @@ MIGRATION_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(analysis_id, severity);",
     "CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(analysis_id, alert_type);",
     "CREATE INDEX IF NOT EXISTS idx_alerts_entity ON alerts(entity_id);",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_tx ON alerts(transaction_id);",
 ]
 
 

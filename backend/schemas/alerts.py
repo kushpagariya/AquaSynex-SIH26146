@@ -50,3 +50,7 @@ class AlertsSummaryResponse(CamelModel):
     by_severity: Dict[str, int]
     by_status: Dict[str, int]
     by_type: Dict[str, int]
+
+
+# Compatibility alias for code expecting AlertItem
+AlertItem = AlertSummary

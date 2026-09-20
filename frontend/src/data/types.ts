@@ -214,6 +214,13 @@ export interface DatasetInfo {
   uploadedAt: string
   stage: DatasetStage
   progress: number
+  analysisId?: string
+  availableFields?: string[]
+  validationSummary?: Record<string, any>
+  highRiskCount?: number
+  criticalRiskCount?: number
+  lowerRiskCount?: number
+  entityCount?: number
   stats?: {
     transactions: number
     entities: number
@@ -224,6 +231,16 @@ export interface DatasetInfo {
     span?: string
   }
   error?: string
+}
+
+export interface ClusterAlert {
+  alertId: string
+  alertType: string
+  severity: string
+  priority: string
+  status: string
+  entityId?: string
+  transactionId?: string
 }
 
 /** Canonical Inferred Behavioral Cluster emitted by pipeline */
@@ -243,6 +260,9 @@ export interface InferredCluster {
   firstSeen: string
   lastSeen: string
   leadAddress: string
+  activeAlertCount: number
+  totalAlertCount: number
+  alerts: ClusterAlert[]
 }
 
 export interface NetworkDistributionItem {

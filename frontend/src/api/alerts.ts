@@ -10,6 +10,9 @@ export interface ListAlertsParams {
   priority?: string
   minRiskScore?: number
   search?: string
+  entityId?: string
+  entityType?: string
+  limit?: number
   page?: number
   pageSize?: number
   sortBy?: string

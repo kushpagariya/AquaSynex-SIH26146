@@ -29,11 +29,13 @@ def list_alerts(
     search: Optional[str] = Query(default=None, description="Free text search on entity, TXID, or reason"),
     page: int = Query(default=1, ge=1, description="Page number"),
     pageSize: int = Query(default=50, ge=1, le=500, description="Items per page"),
+    limit: Optional[int] = Query(default=None, ge=1, le=500, description="Items per page (alias for pageSize)"),
     sortBy: str = Query(default="riskScore", description="Sort field (riskScore, createdAt, priority, severity)"),
     sortDir: str = Query(default="desc", pattern="^(asc|desc)$", description="Sort direction"),
     alert_service: AlertService = Depends(get_alert_service),
 ) -> ApiResponse[List[AlertSummary]]:
     """List alerts with filtering, search, and pagination."""
+    effective_page_size = limit if limit is not None else pageSize
     items, pagination_meta = alert_service.list_alerts(
         analysis_id=analysisId,
         dataset_id=datasetId,
@@ -44,7 +46,7 @@ def list_alerts(
         min_risk_score=minRiskScore,
         search=search,
         page=page,
-        page_size=pageSize,
+        page_size=effective_page_size,
         sort_by=sortBy,
         sort_dir=sortDir,
     )

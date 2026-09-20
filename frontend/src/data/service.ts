@@ -29,6 +29,7 @@ import type {
   AnomalyBucket,
   BehaviorAnalyticsItem,
   BehaviorTypology,
+  ClusterAlert,
   DashboardStats,
   DatasetInfo,
   DatasetProfile,
@@ -499,6 +500,11 @@ export async function getDatasetInfo(datasetIdOverride?: string): Promise<Datase
       }
     }
 
+    const highRisk = completedAnalysis?.highRiskCount ?? 0
+    const critRisk = completedAnalysis?.criticalRiskCount ?? 0
+    const totalEntitiesScored = completedAnalysis?.entityCount ?? detail.canonicalTxCount ?? detail.rowCount ?? 0
+    const lowerRisk = Math.max(0, totalEntitiesScored - highRisk - critRisk)
+
     return {
       id: detail.datasetId,
       name: detail.name || detail.fileName,
@@ -512,6 +518,13 @@ export async function getDatasetInfo(datasetIdOverride?: string): Promise<Datase
             ? "failed"
             : "processing",
       progress: 100,
+      analysisId: completedAnalysis?.analysisId,
+      availableFields: detail.availableFields,
+      validationSummary: detail.validationSummary,
+      highRiskCount: highRisk,
+      criticalRiskCount: critRisk,
+      lowerRiskCount: lowerRisk,
+      entityCount: totalEntitiesScored,
       stats: {
         transactions: detail.canonicalTxCount || detail.rowCount || 0,
         entities: totalAddresses,
@@ -1415,7 +1428,7 @@ export async function getInferredClusters(): Promise<InferredCluster[]> {
   if (!datasetId) return []
 
   try {
-    const [graphData, addrListRes, resultsRes] = await Promise.all([
+    const [graphData, addrListRes, resultsRes, alertsRes] = await Promise.all([
       analysisId
         ? getAnalysisGraph(analysisId, { maxNodes: 500, includeNeighbors: true }).catch(() => null)
         : null,
@@ -1423,6 +1436,7 @@ export async function getInferredClusters(): Promise<InferredCluster[]> {
       analysisId
         ? listAnalysisResults(analysisId, { page: 1, pageSize: 500 }).catch(() => null)
         : null,
+      listAlerts({ datasetId, analysisId: analysisId || undefined }).catch(() => []),
     ])
 
     const resultsMap = new Map<string, { riskScore: number; riskLevel: string; predictionLabel?: string }>()
@@ -1434,18 +1448,59 @@ export async function getInferredClusters(): Promise<InferredCluster[]> {
       })
     }
 
+    // Index persistent alerts by transaction ID and entity ID
+    const alertsByTx = new Map<string, ClusterAlert[]>()
+    const alertsByEntity = new Map<string, ClusterAlert[]>()
+    const rawAlerts: any = alertsRes
+    const alertList: any[] = Array.isArray(rawAlerts) ? rawAlerts : (rawAlerts?.data || [])
+    for (const a of alertList) {
+      const alertItem: ClusterAlert = {
+        alertId: a.alertId,
+        alertType: a.alertType,
+        severity: a.severity,
+        priority: a.priority,
+        status: a.status,
+        entityId: a.entityId,
+        transactionId: a.transactionId,
+      }
+      if (a.transactionId) {
+        if (!alertsByTx.has(a.transactionId)) alertsByTx.set(a.transactionId, [])
+        alertsByTx.get(a.transactionId)!.push(alertItem)
+      }
+      if (a.entityId) {
+        if (!alertsByEntity.has(a.entityId)) alertsByEntity.set(a.entityId, [])
+        alertsByEntity.get(a.entityId)!.push(alertItem)
+      }
+    }
+
     const addresses = addrListRes?.data || []
     if (!addresses.length) return []
 
-    // Map graph edges to determine components
+    // Map graph edges to determine components and associate member transactions
     const edges = graphData?.edges || []
     const adj = new Map<string, Set<string>>()
+    const addrToTxIds = new Map<string, Set<string>>()
+
     for (const a of addresses) {
       adj.set(a.addressId, new Set())
+      addrToTxIds.set(a.addressId, new Set())
     }
+
     for (const e of edges) {
-      if (adj.has(e.source)) adj.get(e.source)!.add(e.target)
-      if (adj.has(e.target)) adj.get(e.target)!.add(e.source)
+      if (!adj.has(e.source)) adj.set(e.source, new Set())
+      if (!adj.has(e.target)) adj.set(e.target, new Set())
+      adj.get(e.source)!.add(e.target)
+      adj.get(e.target)!.add(e.source)
+
+      if (!addrToTxIds.has(e.source)) addrToTxIds.set(e.source, new Set())
+      if (!addrToTxIds.has(e.target)) addrToTxIds.set(e.target, new Set())
+
+      for (const tx of e.transactions || []) {
+        if (tx.transactionId) {
+          addrToTxIds.get(e.source)!.add(tx.transactionId)
+          addrToTxIds.get(e.target)!.add(tx.transactionId)
+        }
+      }
     }
 
     const visited = new Set<string>()
@@ -1472,33 +1527,77 @@ export async function getInferredClusters(): Promise<InferredCluster[]> {
       }
 
       const compAddrs = addresses.filter((addr) => component.includes(addr.addressId))
-      const txCount = compAddrs.reduce((acc, curr) => acc + (curr.transactionCount || 1), 0)
+
+      // Collect member transactions genuine to this cluster
+      const clusterTxIds = new Set<string>()
+      for (const addr of component) {
+        const txs = addrToTxIds.get(addr)
+        if (txs) {
+          for (const t of txs) clusterTxIds.add(t)
+        }
+      }
+
+      const txCount = clusterTxIds.size > 0
+        ? clusterTxIds.size
+        : compAddrs.reduce((acc, curr) => acc + (curr.transactionCount || 1), 0)
+
       const totalRecv = compAddrs.reduce((acc, curr) => acc + parseFloat(curr.totalReceivedBtc || "0"), 0)
       const totalSent = compAddrs.reduce((acc, curr) => acc + parseFloat(curr.totalSentBtc || "0"), 0)
 
+      // Derive cluster risk and dominant behavior from member transactions
       const risks: number[] = []
       const behaviors: string[] = []
-      for (const addr of compAddrs) {
-        const r = resultsMap.get(addr.addressId)
+      for (const txid of clusterTxIds) {
+        const r = resultsMap.get(txid)
         if (r) {
           risks.push(r.riskScore)
           if (r.predictionLabel) behaviors.push(r.predictionLabel)
-        } else if (addr.riskScore !== undefined && addr.riskScore !== null) {
-          risks.push(Math.round(addr.riskScore * 100))
         }
       }
 
       const avgRisk = risks.length ? Math.round(risks.reduce((acc, curr) => acc + curr, 0) / risks.length) : 0
       const highestRisk = risks.length ? Math.max(...risks) : 0
       const severity: Severity =
-        highestRisk >= 85 ? "critical" : highestRisk >= 65 ? "high" : highestRisk >= 35 ? "medium" : "low"
+        highestRisk >= 67 ? "critical" : highestRisk >= 50 ? "high" : highestRisk >= 32 ? "medium" : "low"
 
       const freq: Record<string, number> = {}
       for (const b of behaviors) freq[b] = (freq[b] || 0) + 1
       const freqEntries = Object.entries(freq)
       const dominantBehavior = freqEntries.length ? freqEntries.sort((x, y) => y[1] - x[1])[0][0] : "normal"
 
-      const leadAddress = compAddrs.sort((x, y) => (y.transactionCount || 0) - (x.transactionCount || 0))[0]?.addressId || a.addressId
+      // Match persistent alerts genuinely associated with this cluster's transactions or addresses
+      const clusterAlerts: ClusterAlert[] = []
+      const seenAlertIds = new Set<string>()
+
+      for (const txid of clusterTxIds) {
+        for (const al of alertsByTx.get(txid) || []) {
+          if (!seenAlertIds.has(al.alertId)) {
+            seenAlertIds.add(al.alertId)
+            clusterAlerts.push(al)
+          }
+        }
+        for (const al of alertsByEntity.get(txid) || []) {
+          if (!seenAlertIds.has(al.alertId)) {
+            seenAlertIds.add(al.alertId)
+            clusterAlerts.push(al)
+          }
+        }
+      }
+      for (const addr of component) {
+        for (const al of alertsByEntity.get(addr) || []) {
+          if (!seenAlertIds.has(al.alertId)) {
+            seenAlertIds.add(al.alertId)
+            clusterAlerts.push(al)
+          }
+        }
+      }
+
+      const activeAlerts = clusterAlerts.filter(
+        (al) => al.status.toUpperCase() !== "RESOLVED" && al.status.toUpperCase() !== "DISMISSED"
+      )
+
+      const leadAddress =
+        compAddrs.sort((x, y) => (y.transactionCount || 0) - (x.transactionCount || 0))[0]?.addressId || a.addressId
 
       const firstDates = compAddrs.map((c) => c.firstSeen).filter(Boolean) as string[]
       const lastDates = compAddrs.map((c) => c.lastSeen).filter(Boolean) as string[]
@@ -1519,6 +1618,9 @@ export async function getInferredClusters(): Promise<InferredCluster[]> {
         firstSeen: firstDates.sort()[0] || "",
         lastSeen: lastDates.sort().reverse()[0] || "",
         leadAddress,
+        activeAlertCount: activeAlerts.length,
+        totalAlertCount: clusterAlerts.length,
+        alerts: activeAlerts,
       })
 
       clusterIdx++
