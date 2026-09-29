@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from "react"
+import { useEffect, useRef, useState, useMemo, useCallback, Component, type ErrorInfo } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
 import {
@@ -38,24 +38,59 @@ import { getActiveContext } from "@/data/service"
 import type { GraphExport, GraphNodeDto, GraphEdgeDto } from "@/api/types"
 import type { Severity } from "@/data/types"
 import { formatDateTime, cn } from "@/lib/utils"
+import { buildValidatedCytoscapeElements, typeColors, severityColors } from "@/lib/graph-validation"
 
-// Institutional forensic palette
-const typeColors: Record<string, string> = {
-  wallet: "#3B6D9C",
-  address: "#3B6D9C",
-  transaction: "#173B63",
-  cluster: "#4F46E5",
-  ip: "#A46A16",
-  network: "#A46A16",
-  exchange: "#2F6B4F",
-  mixer: "#A63D3D",
+interface GraphErrorBoundaryProps {
+  children: React.ReactNode
+  onReset?: () => void
 }
 
-const severityColors: Record<string, string> = {
-  low: "#2F6B4F",
-  medium: "#A46A16",
-  high: "#B85D1B",
-  critical: "#A63D3D",
+interface GraphErrorBoundaryState {
+  hasError: boolean
+  error: Error | null
+}
+
+class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBoundaryState> {
+  constructor(props: GraphErrorBoundaryProps) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error): GraphErrorBoundaryState {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.warn("GraphErrorBoundary caught Cytoscape rendering exception:", error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="m-auto p-8 max-w-md text-center space-y-3">
+          <div className="size-10 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center mx-auto">
+            <AlertTriangle className="size-5" />
+          </div>
+          <h4 className="text-sm font-semibold text-fg">Graph Rendering Notice</h4>
+          <p className="text-xs text-fg-muted leading-relaxed">
+            {this.state.error?.message || "An unexpected error occurred while rendering the topology graph."}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false, error: null })
+              this.props.onReset?.()
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 rounded border border-line bg-panel-2 px-3 py-1.5 text-xs font-semibold text-fg hover:border-accent hover:bg-panel transition-colors"
+          >
+            <RefreshCw className="size-3.5" />
+            Reset Graph View
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 interface SelectedNodeInfo {
@@ -179,7 +214,7 @@ export function GraphExplorerPage() {
           // Mode 2: Full Connection Mode (constrained to active analysis)
           exportData = await getAnalysisGraph(analysisId || datasetId!, {
             maxNodes: 500,
-            includeNeighbors: true,
+            includeNeighbors: !highRisk,
             minRiskScore: highRisk ? 0.50 : undefined,
           })
         } else {
@@ -293,6 +328,20 @@ export function GraphExplorerPage() {
     setTimeout(() => setCopiedId(false), 2000)
   }
 
+  // Deterministically sanitize, filter, and validate graph elements
+  const sanitizedGraph = useMemo(() => {
+    return buildValidatedCytoscapeElements({
+      rawGraph,
+      suspiciousOnly,
+      viewMode,
+      focusedId: searchQuery.trim() || focusParam || selectedNode?.id,
+    })
+  }, [rawGraph, suspiciousOnly, viewMode, searchQuery, focusParam, selectedNode?.id])
+
+  const elements = useMemo<ElementDefinition[]>(() => {
+    return [...sanitizedGraph.nodes, ...sanitizedGraph.edges]
+  }, [sanitizedGraph])
+
   // Summary statistics calculated strictly from currently loaded graph data
   const summaryStats = useMemo(() => {
     if (!rawGraph) {
@@ -313,17 +362,21 @@ export function GraphExplorerPage() {
     let high = 0
     let critical = 0
 
-    for (const n of rawGraph.nodes) {
-      const t = (n.nodeType || "address").toLowerCase()
+    const nodesToCount = suspiciousOnly ? sanitizedGraph.nodes : rawGraph.nodes
+
+    for (const n of nodesToCount) {
+      const data = "data" in n ? (n.data as any) : n
+      const t = (data.nodeType || "address").toLowerCase()
       if (t === "transaction") txs++
       else if (t === "cluster") clusters++
       else addrs++
 
-      const lvl = (n.riskLevel || "").toLowerCase()
-      const score = n.riskScore || 0
-      if (lvl === "critical" || score >= 0.80) {
+      const lvl = (data.riskLevel || "").toLowerCase()
+      const rawScore = data.riskScore ?? 0
+      const score = typeof rawScore === "number" && rawScore > 1 ? rawScore / 100 : rawScore
+      if (lvl === "critical" || (score !== null && score >= 0.80)) {
         critical++
-      } else if (lvl === "high" || score >= 0.50) {
+      } else if (lvl === "high" || (score !== null && score >= 0.50)) {
         high++
       }
     }
@@ -334,91 +387,10 @@ export function GraphExplorerPage() {
       clusterCount: clusters,
       highRiskCount: high,
       criticalRiskCount: critical,
-      totalNodes: rawGraph.nodes.length,
-      totalEdges: rawGraph.edges.length,
+      totalNodes: suspiciousOnly ? sanitizedGraph.nodes.length : rawGraph.nodes.length,
+      totalEdges: suspiciousOnly ? sanitizedGraph.edges.length : rawGraph.edges.length,
     }
-  }, [rawGraph])
-
-  // Build Cytoscape elements with restrained forensic typography and selective labeling
-  const elements = useMemo<ElementDefinition[]>(() => {
-    if (!rawGraph) return []
-
-    const validNodeIds = new Set<string>()
-    const nodes: ElementDefinition[] = []
-
-    for (const n of rawGraph.nodes) {
-      const nType = (n.nodeType || "address").toLowerCase()
-      const lvl = (n.riskLevel || "").toLowerCase()
-      const score = n.riskScore ?? 0
-
-      // Enforce high-risk filter if active (risk_score >= 0.50 or high/critical)
-      if (suspiciousOnly && score < 0.50 && lvl !== "high" && lvl !== "critical") {
-        continue
-      }
-
-      validNodeIds.add(n.id)
-      const isHighRisk = lvl === "high" || lvl === "critical" || score >= 0.50
-
-      // Color mapping with restrained semantic emphasis
-      let nodeColor = "#64748B" // Neutral / default fallback
-      const hasRisk = (n.riskLevel && n.riskLevel.trim() !== "") || (n.riskScore !== undefined && n.riskScore !== null)
-      if (hasRisk) {
-        if (lvl === "critical" || score >= 0.80) {
-          nodeColor = severityColors.critical
-        } else if (lvl === "high" || score >= 0.50) {
-          nodeColor = severityColors.high
-        } else if (lvl === "medium" || score >= 0.25) {
-          nodeColor = severityColors.medium
-        } else {
-          nodeColor = severityColors.low
-        }
-      } else if (typeColors[nType]) {
-        nodeColor = typeColors[nType]
-      }
-
-      const borderColor =
-        nType === "transaction" ? "#0F172A" : nType === "cluster" ? "#312E81" : "#1E3A8A"
-
-      const displayLabel = n.label || `${n.id.slice(0, 8)}…`
-
-      nodes.push({
-        data: {
-          id: n.id,
-          label: displayLabel,
-          nodeType: nType,
-          riskScore: n.riskScore,
-          riskLevel: n.riskLevel,
-          color: nodeColor,
-          borderColor: borderColor,
-          shape: nType === "transaction" ? "round-rectangle" : nType === "cluster" ? "hexagon" : "ellipse",
-          isFocus: 0,
-          isSelected: 0,
-        },
-      })
-    }
-
-    const edges: ElementDefinition[] = []
-    for (const e of rawGraph.edges) {
-      if (!validNodeIds.has(e.source) || !validNodeIds.has(e.target)) continue
-      const valBtc = parseFloat(e.totalValueBtc || "0")
-      const isSuspicious = (e.totalValueSatoshi || 0) > 100_000_000 || valBtc >= 1.0
-
-      edges.push({
-        data: {
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          label: valBtc > 0 ? `${valBtc.toFixed(3)} BTC` : "",
-          totalValueBtc: e.totalValueBtc,
-          transactionCount: e.transactionCount,
-          transactions: e.transactions || [],
-          suspicious: isSuspicious ? 1 : 0,
-        },
-      })
-    }
-
-    return [...nodes, ...edges]
-  }, [rawGraph, suspiciousOnly])
+  }, [rawGraph, suspiciousOnly, sanitizedGraph])
 
   // Initialize and update Cytoscape canvas
   useEffect(() => {
@@ -987,9 +959,66 @@ export function GraphExplorerPage() {
                   </div>
                 )}
               </div>
+            ) : elements.length === 0 ? (
+              /* Empty Graph Filter / Result State */
+              <div className="m-auto p-8 max-w-md text-center">
+                <EmptyState
+                  icon={
+                    suspiciousOnly ? (
+                      <ShieldAlert className="size-5 text-amber-600" />
+                    ) : (
+                      <Network className="size-5 text-fg-subtle" />
+                    )
+                  }
+                  title={
+                    suspiciousOnly
+                      ? "No high-risk connections found"
+                      : "No graph connections found"
+                  }
+                  description={
+                    suspiciousOnly
+                      ? viewMode === "investigation"
+                        ? "No high-risk transactions or connected entities were detected for this search query."
+                        : "No entities or transactions exceeding the high-risk threshold (risk score ≥ 0.50) were found in this analysis."
+                      : "No matching entities or transaction edges are available for the selected view."
+                  }
+                  action={
+                    suspiciousOnly ? (
+                      <button
+                        type="button"
+                        onClick={() => handleHighRiskToggle(false)}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded border border-line bg-panel-2 px-3 py-1.5 text-xs font-semibold text-fg hover:border-accent hover:bg-panel transition-colors"
+                      >
+                        <RefreshCw className="size-3.5" />
+                        Show all connections
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = searchQuery.trim() || focusParam || selectedNode?.id
+                          loadGraphData(target || undefined, currentHops, viewMode, suspiciousOnly)
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded border border-line bg-panel-2 px-3 py-1.5 text-xs font-semibold text-fg hover:border-accent hover:bg-panel transition-colors"
+                      >
+                        <RefreshCw className="size-3.5" />
+                        Reload graph
+                      </button>
+                    )
+                  }
+                />
+              </div>
             ) : (
               /* Active Cytoscape Graph Canvas */
-              <div ref={containerRef} className="h-full w-full" />
+              <GraphErrorBoundary
+                onReset={() => {
+                  const target = searchQuery.trim() || focusParam || selectedNode?.id
+                  loadGraphData(target || undefined, currentHops, viewMode, false)
+                  setSuspiciousOnly(false)
+                }}
+              >
+                <div ref={containerRef} className="h-full w-full" />
+              </GraphErrorBoundary>
             )}
 
             {/* Compact Legend Overlay */}

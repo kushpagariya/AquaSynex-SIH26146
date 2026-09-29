@@ -66,8 +66,35 @@ class GraphService:
         analysis = analysis_queries.get_analysis_by_id(self.conn, analysis_id)
         dataset_id = analysis["dataset_id"]
 
-        # Fetch address nodes with risk scores from ml_results
+        # Fetch address nodes with risk scores from ml_results (or attributed from transaction ml_results)
         node_query = """
+        WITH addr_tx_risk AS (
+            SELECT 
+                input_address AS address_id,
+                MAX(r.risk_score) AS max_risk_score,
+                MAX(CASE WHEN r.risk_level = 'critical' THEN 4 WHEN r.risk_level = 'high' THEN 3 WHEN r.risk_level = 'medium' THEN 2 ELSE 1 END) AS max_lvl_rank
+            FROM transaction_inputs i
+            JOIN ml_results r ON i.transaction_id = r.entity_id AND i.dataset_id = r.dataset_id AND r.analysis_id = ?
+            WHERE i.dataset_id = ? AND i.input_address IS NOT NULL
+            GROUP BY input_address
+            UNION ALL
+            SELECT 
+                output_address AS address_id,
+                MAX(r.risk_score) AS max_risk_score,
+                MAX(CASE WHEN r.risk_level = 'critical' THEN 4 WHEN r.risk_level = 'high' THEN 3 WHEN r.risk_level = 'medium' THEN 2 ELSE 1 END) AS max_lvl_rank
+            FROM transaction_outputs o
+            JOIN ml_results r ON o.transaction_id = r.entity_id AND o.dataset_id = r.dataset_id AND r.analysis_id = ?
+            WHERE o.dataset_id = ? AND o.output_address IS NOT NULL
+            GROUP BY output_address
+        ),
+        agg_tx_risk AS (
+            SELECT 
+                address_id,
+                MAX(max_risk_score) AS tx_risk_score,
+                MAX(max_lvl_rank) AS tx_lvl_rank
+            FROM addr_tx_risk
+            GROUP BY address_id
+        )
         SELECT 
             a.address_id,
             a.transaction_count,
@@ -75,21 +102,25 @@ class GraphService:
             a.total_sent_satoshi,
             a.first_seen_timestamp,
             a.last_seen_timestamp,
-            r.risk_score,
-            r.risk_level
+            COALESCE(r.risk_score, t.tx_risk_score) AS risk_score,
+            COALESCE(
+                r.risk_level,
+                CASE t.tx_lvl_rank WHEN 4 THEN 'critical' WHEN 3 THEN 'high' WHEN 2 THEN 'medium' WHEN 1 THEN 'low' ELSE NULL END
+            ) AS risk_level
         FROM addresses a
         LEFT JOIN ml_results r 
             ON a.address_id = r.entity_id 
             AND a.dataset_id = r.dataset_id 
             AND r.analysis_id = ?
+        LEFT JOIN agg_tx_risk t ON a.address_id = t.address_id
         WHERE a.dataset_id = ?
         """
-        node_params = [analysis_id, dataset_id]
+        node_params = [analysis_id, dataset_id, analysis_id, dataset_id, analysis_id, dataset_id]
         if min_risk_score is not None:
-            node_query += " AND r.risk_score >= ?"
+            node_query += " AND COALESCE(r.risk_score, t.tx_risk_score) >= ?"
             node_params.append(min_risk_score)
 
-        node_query += " ORDER BY r.risk_score DESC NULLS LAST LIMIT ?"
+        node_query += " ORDER BY COALESCE(r.risk_score, t.tx_risk_score) DESC NULLS LAST LIMIT ?"
         node_params.append(max_nodes)
 
         node_rel = self.conn.execute(node_query, node_params)
