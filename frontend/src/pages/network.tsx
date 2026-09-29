@@ -81,17 +81,6 @@ export function NetworkPage() {
   return (
     <AppLayout title="Network Intelligence">
       <div className="space-y-6 font-sans">
-        {/* Subtle Institutional Context Banner */}
-        <div className="rounded border border-line bg-panel p-3.5 shadow-sm text-xs">
-          <div className="flex items-start gap-2.5">
-            <Info className="size-4 shrink-0 text-[#173B63] mt-0.5" />
-            <p className="text-fg-muted leading-relaxed">
-              <strong className="font-semibold text-fg">Observed P2P Broadcast Telemetry:</strong> Peer propagation vectors recorded at transaction announcement.
-              Geographic and routing identities are contextual; elevated risk is driven exclusively by supervised behavioral ML features.
-            </p>
-          </div>
-        </div>
-
         {/* Progressive Drill-down Navigation Path Bar */}
         <div className="rounded border border-line bg-panel px-4 py-3 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -214,7 +203,7 @@ export function NetworkPage() {
                   {Math.round(
                     (data.ports.standardPortCount /
                       (data.ports.standardPortCount + data.ports.nonStandardPortCount || 1)) *
-                      100,
+                    100,
                   )}
                   %
                 </p>

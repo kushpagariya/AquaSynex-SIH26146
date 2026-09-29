@@ -14,32 +14,45 @@ import { StatCard } from "@/components/stat-card"
 import { AnomalyOverview } from "@/components/anomaly-overview"
 import { AlertTable } from "@/components/alert-table"
 import { ErrorState, LoadingState } from "@/components/ui/states"
-import { getAlerts, getDashboardStats, getBehaviorAnalytics } from "@/data/service"
-import type { Alert, DashboardStats, BehaviorAnalyticsItem } from "@/data/types"
+import { loadDashboardSnapshot } from "@/data/service"
+import type { DashboardSnapshot } from "@/data/types"
 import { formatDateTime, formatNumber } from "@/lib/utils"
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [alerts, setAlerts] = useState<Alert[] | null>(null)
-  const [behaviors, setBehaviors] = useState<BehaviorAnalyticsItem[]>([])
+  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null)
+  const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([
-      getDashboardStats(),
-      getAlerts(),
-      getBehaviorAnalytics().catch(() => []),
-    ])
-      .then(([s, a, b]) => {
-        setStats(s)
-        setAlerts(a)
-        setBehaviors(b)
+    let isCurrent = true
+    const abortController = new AbortController()
+
+    setLoading(true)
+    setErrorMsg(null)
+
+    loadDashboardSnapshot(abortController.signal)
+      .then((data) => {
+        if (!isCurrent) return
+        setSnapshot(data)
+        setLoading(false)
       })
       .catch((err) => {
+        if (!isCurrent || abortController.signal.aborted) return
         setErrorMsg(err instanceof Error ? err.message : "Failed to connect to TraceGrid backend")
+        setLoading(false)
       })
+
+    return () => {
+      isCurrent = false
+      abortController.abort()
+    }
   }, [])
+
+  const stats = snapshot?.stats
+  const alerts = snapshot?.alerts ?? []
+  const behaviors = snapshot?.behaviors ?? []
+  const hasDataset = snapshot?.hasDataset ?? false
 
   const topBehaviors = behaviors.filter((b) => b.count > 0).slice(0, 4)
 
@@ -50,11 +63,11 @@ export function DashboardPage() {
           title="Backend Connection Error"
           description={errorMsg}
         />
-      ) : !stats || !alerts ? (
+      ) : loading || !stats ? (
         <LoadingState label="Loading system overview" />
       ) : (
         <div className="space-y-6">
-          {stats.totalTransactions === 0 ? (
+          {!hasDataset ? (
             <div className="flex items-center justify-between rounded-lg border border-line bg-panel p-5 shadow-xs">
               <div>
                 <p className="text-sm font-semibold text-fg font-sans">No dataset loaded yet</p>

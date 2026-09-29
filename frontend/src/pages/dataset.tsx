@@ -64,7 +64,7 @@ export function DatasetPage() {
       .then((info) => {
         setExisting(info)
         if (info) {
-          getDatasetProfile(info.id).then(setProfile).catch(() => {})
+          getDatasetProfile(info.id).then(setProfile).catch(() => { })
         }
       })
       .catch(() => setExisting(null))
@@ -128,7 +128,7 @@ export function DatasetPage() {
       const refreshed = await getDatasetInfo()
       setExisting(refreshed)
       if (refreshed) {
-        getDatasetProfile(refreshed.id).then(setProfile).catch(() => {})
+        getDatasetProfile(refreshed.id).then(setProfile).catch(() => { })
       }
       setStagedFile(null)
       setStage("completed")
@@ -424,10 +424,10 @@ export function DatasetPage() {
 
               <div>
                 <h4 className="text-sm font-bold text-fg font-sans">
-                  AquaSynex Production Analysis
+                  TraceGrid Production Analysis
                 </h4>
                 <p className="text-xs text-fg-muted mt-0.5">
-                  Runs the complete frozen AquaSynex analysis pipeline.
+                  Runs the complete frozen TraceGrid analysis pipeline.
                 </p>
               </div>
 

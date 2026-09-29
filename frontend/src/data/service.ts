@@ -58,6 +58,8 @@ export interface SearchResult {
   route: string
 }
 
+const ACTIVE_CONTEXT_STORAGE_KEY = "tracegrid_active_context"
+
 interface ActiveSessionContext {
   datasetId?: string
   analysisId?: string
@@ -66,17 +68,49 @@ interface ActiveSessionContext {
 let sessionContext: ActiveSessionContext = {}
 let activeContextPromise: Promise<ActiveSessionContext> | null = null
 
+function readStoredContext(): ActiveSessionContext | null {
+  if (typeof window === "undefined" || !window.sessionStorage) return null
+  try {
+    const raw = sessionStorage.getItem(ACTIVE_CONTEXT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === "object" && typeof parsed.datasetId === "string" && parsed.datasetId) {
+      return {
+        datasetId: parsed.datasetId,
+        analysisId: typeof parsed.analysisId === "string" && parsed.analysisId ? parsed.analysisId : undefined,
+      }
+    }
+  } catch {}
+  return null
+}
+
+function writeStoredContext(ctx: ActiveSessionContext) {
+  if (typeof window === "undefined" || !window.sessionStorage) return
+  try {
+    if (ctx.datasetId) {
+      sessionStorage.setItem(
+        ACTIVE_CONTEXT_STORAGE_KEY,
+        JSON.stringify({ datasetId: ctx.datasetId, analysisId: ctx.analysisId }),
+      )
+    } else {
+      sessionStorage.removeItem(ACTIVE_CONTEXT_STORAGE_KEY)
+    }
+  } catch {}
+}
+
 export function setActiveContext(datasetId?: string, analysisId?: string) {
   sessionContext = { datasetId, analysisId }
+  writeStoredContext({ datasetId, analysisId })
 }
 
 export function clearActiveContext() {
   sessionContext = {}
+  writeStoredContext({})
 }
 
 /**
  * Resolves the currently active dataset and analysis IDs from the backend.
- * Uses cached session IDs if valid, otherwise gracefully queries backend.
+ * Uses atomic sessionStorage IDs if valid on backend, otherwise gracefully queries backend.
  */
 export async function getActiveContext(forceRefresh = false): Promise<ActiveSessionContext> {
   if (!forceRefresh && sessionContext.datasetId && sessionContext.analysisId) {
@@ -89,6 +123,41 @@ export async function getActiveContext(forceRefresh = false): Promise<ActiveSess
 
   activeContextPromise = (async () => {
     try {
+      if (!forceRefresh) {
+        const stored = readStoredContext()
+        if (stored?.datasetId) {
+          try {
+            const ds = await getDataset(stored.datasetId)
+            if (ds && ds.datasetId === stored.datasetId) {
+              let validatedAnalysisId: string | undefined = undefined
+              if (stored.analysisId) {
+                try {
+                  const an = await getAnalysis(stored.analysisId)
+                  if (an && an.analysisId === stored.analysisId && an.datasetId === stored.datasetId) {
+                    validatedAnalysisId = an.analysisId
+                  }
+                } catch {
+                  validatedAnalysisId = undefined
+                }
+              }
+
+              if (!validatedAnalysisId) {
+                const analyses = await listAnalysesForDataset(stored.datasetId).catch(() => [])
+                const completed = analyses.find((a) => a.status === "completed")
+                const active = completed || analyses.find((a) => a.status === "running" || a.status === "pending") || analyses[0]
+                validatedAnalysisId = active?.analysisId
+              }
+
+              sessionContext = { datasetId: stored.datasetId, analysisId: validatedAnalysisId }
+              writeStoredContext(sessionContext)
+              return sessionContext
+            }
+          } catch {
+            clearActiveContext()
+          }
+        }
+      }
+
       const datasetsRes = await listDatasets({
         page: 1,
         pageSize: 1,
@@ -97,23 +166,26 @@ export async function getActiveContext(forceRefresh = false): Promise<ActiveSess
       })
       const datasets = datasetsRes.data || []
       if (!datasets.length) {
-        sessionContext = {}
+        clearActiveContext()
         return {}
       }
 
       const datasetId = datasets[0].datasetId
       const analyses = await listAnalysesForDataset(datasetId).catch(() => [])
+      const completedAnalysis = analyses.find((a) => a.status === "completed")
       const activeAnalysis =
-        analyses.find((a) => a.status === "completed") ||
+        completedAnalysis ||
         analyses.find((a) => a.status === "running" || a.status === "pending") ||
         analyses[0]
       const analysisId = activeAnalysis ? activeAnalysis.analysisId : undefined
 
       sessionContext = { datasetId, analysisId }
+      writeStoredContext(sessionContext)
       return sessionContext
     } catch (err) {
       console.error("Failed to resolve active context from backend:", err)
       sessionContext = {}
+      writeStoredContext({})
       return {}
     } finally {
       activeContextPromise = null
@@ -123,50 +195,220 @@ export async function getActiveContext(forceRefresh = false): Promise<ActiveSess
   return activeContextPromise
 }
 
+export interface DashboardSnapshot {
+  hasDataset: boolean
+  datasetId?: string
+  analysisId?: string
+  stats: DashboardStats
+  alerts: Alert[]
+  behaviors: BehaviorAnalyticsItem[]
+}
+
+export function compileBehaviorTypologies(results: any[], txs: any[]): BehaviorAnalyticsItem[] {
+  const total = results.length || 1
+
+  const typologyMeta: Record<BehaviorTypology, { name: string; description: string }> = {
+    normal: {
+      name: "Normal Flow",
+      description: "Standard peer-to-peer transfers with standard fee rate and change output patterns.",
+    },
+    benign_high_volume: {
+      name: "Benign High Volume",
+      description: "Elevated transaction velocity without topological obfuscation or abnormal coin splits.",
+    },
+    transaction_burst: {
+      name: "Transaction Burst",
+      description: "Anomalous sudden spike of transactions broadcast in an abnormally short time interval.",
+    },
+    rapid_multihop: {
+      name: "Rapid Multihop",
+      description: "Consecutive chained transfers passing funds across addresses with near-zero latency.",
+    },
+    peeling_chain: {
+      name: "Peeling Chain",
+      description: "Classic layering heuristic: successive peels of 5-15% with remainder forwarded to fresh change.",
+    },
+    coordinated_activity: {
+      name: "Coordinated Activity",
+      description: "Multi-agent synchronized movement or co-input fan-in across seemingly distinct clusters.",
+    },
+    high_fan_in: {
+      name: "High Fan-In",
+      description: "Consolidation pattern: disproportionate ratio of numerous inputs converging into few outputs.",
+    },
+    high_fan_out: {
+      name: "High Fan-Out",
+      description: "Dispersion pattern: single input split simultaneously into large numbers of output recipients.",
+    },
+    temporal_anomaly: {
+      name: "Temporal Anomaly",
+      description: "Irregular time-of-day or inter-block arrival variance deviating strongly from baseline.",
+    },
+    mixing_like: {
+      name: "Mixing-Like Pattern",
+      description: "Equal-denomination split and recombine patterns mimicking CoinJoin or mixer passes.",
+    },
+    amount_anomaly: {
+      name: "Amount Anomaly",
+      description: "Statistically extreme transaction value or fee-rate spike compared to historical distribution.",
+    },
+  }
+
+  return BEHAVIOR_TYPOLOGIES.map((typology) => {
+    const matching = results.filter((r) => r.predictionLabel === typology)
+    const count = matching.length
+    const percentage = Math.round((count / total) * 100)
+    const avgRisk = count
+      ? Math.round((matching.reduce((acc: number, curr: any) => acc + curr.riskScore, 0) / count) * 100)
+      : typology === "normal" || typology === "benign_high_volume"
+        ? 12
+        : 75
+
+    const severityBreakdown: Record<Severity, number> = { low: 0, medium: 0, high: 0, critical: 0 }
+    for (const m of matching) {
+      const lvl = (m.riskLevel?.toLowerCase() as Severity) || "low"
+      severityBreakdown[lvl]++
+    }
+
+    const topTransactions = matching
+      .filter((m) => m.entityType === "transaction")
+      .slice(0, 5)
+      .map((m) => {
+        const txMatch = txs.find((t: any) => t.transactionId === m.entityId)
+        return {
+          txid: m.entityId,
+          amount: parseFloat(txMatch?.totalOutputValueBtc || "0.5"),
+          timestamp: m.predictedAt,
+          riskScore: Math.round(m.riskScore * 100),
+          severity: (m.riskLevel?.toLowerCase() as Severity) || "low",
+        }
+      })
+
+    const topEntities = matching
+      .filter((m) => m.entityType === "address")
+      .slice(0, 5)
+      .map((m) => ({
+        id: m.entityId,
+        label: `${m.entityId.slice(0, 8)}…${m.entityId.slice(-6)}`,
+        address: m.entityId,
+        riskScore: Math.round(m.riskScore * 100),
+        severity: (m.riskLevel?.toLowerCase() as Severity) || "low",
+      }))
+
+    return {
+      key: typology,
+      name: typologyMeta[typology].name,
+      description: typologyMeta[typology].description,
+      count,
+      percentage,
+      averageRisk: avgRisk,
+      severityBreakdown,
+      topTransactions,
+      topEntities,
+    }
+  })
+}
+
 /**
- * Aggregates dashboard statistics from live datasets and analysis runs.
+ * Loads a single authoritative snapshot for the entire Dashboard in one atomic pass.
+ * Freezes the active datasetId and analysisId so that all displayed sections and KPIs
+ * are guaranteed to share the exact same context.
  */
-export async function getDashboardStats(): Promise<DashboardStats> {
+export async function loadDashboardSnapshot(signal?: AbortSignal): Promise<DashboardSnapshot> {
   const { datasetId, analysisId } = await getActiveContext()
+
+  const emptyStats: DashboardStats = {
+    totalTransactions: 0,
+    totalEntities: 0,
+    suspiciousEntities: 0,
+    highRiskEntities: 0,
+    activeAlerts: 0,
+    anomaliesDetected: 0,
+    lastProcessed: undefined,
+    processingStatus: {
+      ingestion: false,
+      entityResolution: false,
+      riskScoring: false,
+      graphBuild: false,
+    },
+    deltas: { transactions: 0, entities: 0, alerts: 0, highRisk: 0 },
+    anomalySeries: [],
+  }
 
   if (!datasetId) {
     return {
-      totalTransactions: 0,
-      totalEntities: 0,
-      suspiciousEntities: 0,
-      highRiskEntities: 0,
-      activeAlerts: 0,
-      anomaliesDetected: 0,
-      lastProcessed: undefined,
-      processingStatus: {
-        ingestion: false,
-        entityResolution: false,
-        riskScoring: false,
-        graphBuild: false,
-      },
-      deltas: { transactions: 0, entities: 0, alerts: 0, highRisk: 0 },
-      anomalySeries: [],
+      hasDataset: false,
+      datasetId: undefined,
+      analysisId: undefined,
+      stats: emptyStats,
+      alerts: [],
+      behaviors: [],
     }
   }
 
-  const [datasetDetail, addrList, analysisDetail, alertSummary] = await Promise.all([
-    getDataset(datasetId).catch(() => null),
+  if (signal?.aborted) {
+    throw new DOMException("Dashboard snapshot request aborted", "AbortError")
+  }
+
+  // Freeze datasetId and analysisId across all parallel requests
+  const [
+    datasetDetail,
+    addrList,
+    analysisDetail,
+    alertSummary,
+    alertsRes,
+    resultsRes,
+    txRes,
+  ] = await Promise.all([
+    getDataset(datasetId),
     listAddresses(datasetId, { page: 1, pageSize: 1, analysisId }).catch(() => null),
     analysisId ? getAnalysis(analysisId).catch(() => null) : Promise.resolve(null),
     analysisId ? getAlertsSummary(analysisId, datasetId).catch(() => null) : Promise.resolve(null),
+    analysisId
+      ? listAlerts({
+          analysisId,
+          datasetId,
+          page: 1,
+          pageSize: 100,
+          sortBy: "riskScore",
+          sortDir: "desc",
+        }).catch(() => null)
+      : Promise.resolve(null),
+    analysisId
+      ? listAnalysisResults(analysisId, { page: 1, pageSize: 500 }).catch(() => null)
+      : Promise.resolve(null),
+    listTransactions(datasetId, {
+      page: 1,
+      pageSize: 200,
+      sortBy: "timestamp",
+      sortDir: "asc",
+      analysisId,
+    }).catch(() => ({ data: [] })),
   ])
 
-  let totalEntities =
+  if (signal?.aborted) {
+    throw new DOMException("Dashboard snapshot request aborted", "AbortError")
+  }
+
+  // 1. Transactions KPI: Total canonical transactions for the active dataset
+  const totalTransactions = datasetDetail?.canonicalTxCount || datasetDetail?.rowCount || 0
+
+  // 2. High-Risk Transactions KPI: ML confidence score >= 70 (high + critical)
+  const highRisk = analysisDetail?.highRiskCount || 0
+  const criticalRisk = analysisDetail?.criticalRiskCount || 0
+  const highRiskEntities = highRisk + criticalRisk
+
+  // 3. Active Alerts KPI: Authoritative active cases from alerts summary
+  const activeAlerts = alertSummary ? alertSummary.active : highRiskEntities
+  const anomaliesDetected = alertSummary ? alertSummary.total : activeAlerts
+  const lastProcessed = analysisDetail?.completedAt || datasetDetail?.uploadedAt || undefined
+
+  // 4. Entity count
+  const totalEntities =
     addrList?.meta?.pagination?.totalItems ||
     analysisDetail?.entityCount ||
     (datasetDetail?.validationSummary?.addressCount as number) ||
     0
-  let highRisk = analysisDetail?.highRiskCount || 0
-  let criticalRisk = analysisDetail?.criticalRiskCount || 0
-  let highRiskEntities = highRisk + criticalRisk
-  let activeAlerts = alertSummary ? alertSummary.active : highRisk + criticalRisk
-  let anomaliesDetected = alertSummary ? alertSummary.total : activeAlerts
-  let lastProcessed = analysisDetail?.completedAt || datasetDetail?.uploadedAt || undefined
 
   const isCompleted = analysisDetail?.status === "completed" || datasetDetail?.status === "ready"
   const processingStatus = {
@@ -176,62 +418,51 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     graphBuild: isCompleted,
   }
 
-  // Construct anomaly series from recent transactions, discretized into uniform bounded bins
+  // 5. Construct temporal anomaly series
+  const txs = (txRes as any)?.data || []
   let anomalySeries: AnomalyBucket[] = []
-  try {
-    const txRes = await listTransactions(datasetId, {
-      page: 1,
-      pageSize: 200,
-      sortBy: "timestamp",
-      sortDir: "asc",
-      analysisId,
-    })
-    const txs = txRes.data || []
-    if (txs.length) {
-      const timestamps = txs
-        .map((t) => (t.timestamp ? new Date(t.timestamp).getTime() : NaN))
-        .filter((t) => !isNaN(t))
+  if (txs.length) {
+    const timestamps = txs
+      .map((t: any) => (t.timestamp ? new Date(t.timestamp).getTime() : NaN))
+      .filter((t: any) => !isNaN(t))
 
-      if (timestamps.length) {
-        const minTime = Math.min(...timestamps)
-        const maxTime = Math.max(...timestamps)
-        const numBuckets = Math.min(10, Math.max(3, txs.length))
-        const timeSpan = maxTime - minTime
-        const interval = timeSpan > 0 ? timeSpan / numBuckets : 3600000
+    if (timestamps.length) {
+      const minTime = Math.min(...timestamps)
+      const maxTime = Math.max(...timestamps)
+      const numBuckets = Math.min(10, Math.max(3, txs.length))
+      const timeSpan = maxTime - minTime
+      const interval = timeSpan > 0 ? timeSpan / numBuckets : 3600000
 
-        const buckets: AnomalyBucket[] = []
-        for (let i = 0; i < numBuckets; i++) {
-          const bStart = minTime + i * interval
-          const bEnd = minTime + (i + 1) * interval
-          const label = new Date(bStart).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-          const inBucket = txs.filter((t) => {
-            if (!t.timestamp) return false
-            const time = new Date(t.timestamp).getTime()
-            return i === numBuckets - 1
-              ? time >= bStart && time <= bEnd
-              : time >= bStart && time < bEnd
-          })
-          const anomalies = inBucket.filter(
-            (t) => t.riskLevel === "high" || t.riskLevel === "critical",
-          ).length
-          buckets.push({
-            label,
-            transactions: inBucket.length,
-            anomalies,
-          })
-        }
-        anomalySeries = buckets
+      const buckets: AnomalyBucket[] = []
+      for (let i = 0; i < numBuckets; i++) {
+        const bStart = minTime + i * interval
+        const bEnd = minTime + (i + 1) * interval
+        const label = new Date(bStart).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+        const inBucket = txs.filter((t: any) => {
+          if (!t.timestamp) return false
+          const time = new Date(t.timestamp).getTime()
+          return i === numBuckets - 1
+            ? time >= bStart && time <= bEnd
+            : time >= bStart && time < bEnd
+        })
+        const anomalies = inBucket.filter(
+          (t: any) => t.riskLevel === "high" || t.riskLevel === "critical",
+        ).length
+        buckets.push({
+          label,
+          transactions: inBucket.length,
+          anomalies,
+        })
       }
+      anomalySeries = buckets
     }
-  } catch {
-    anomalySeries = []
   }
 
-  return {
-    totalTransactions: datasetDetail?.canonicalTxCount || datasetDetail?.rowCount || 0,
+  const stats: DashboardStats = {
+    totalTransactions,
     totalEntities,
     suspiciousEntities: highRisk,
     highRiskEntities,
@@ -242,6 +473,71 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     deltas: { transactions: 0, entities: 0, alerts: 0, highRisk: 0 },
     anomalySeries,
   }
+
+  // 6. Format priority alert queue items
+  let formattedAlerts: Alert[] = []
+  const alertItems = alertsRes?.data || []
+  if (alertItems.length > 0) {
+    formattedAlerts = alertItems.map((a: any) => ({
+      id: a.alertId,
+      entityId: a.entityId,
+      entityLabel:
+        a.entityId.length > 16
+          ? `${a.entityId.slice(0, 8)}…${a.entityId.slice(-6)}`
+          : a.entityId,
+      entityType: (a.entityType === "address" ? "wallet" : a.entityType) as EntityType,
+      alertType: a.alertType,
+      riskScore: Math.round(a.riskScore * 100),
+      severity: (a.severity?.toLowerCase() as Severity) || "low",
+      priority: a.priority,
+      behaviorType: a.behaviorType || undefined,
+      triggerSource: a.triggerSource,
+      transactionId: a.transactionId || undefined,
+      reason: a.triggerReason,
+      timestamp: a.createdAt,
+      status: (a.status?.toLowerCase() as AlertStatus) || "new",
+      metadata: (a.metadataJson as Record<string, unknown>) || undefined,
+    }))
+  } else if (resultsRes?.data && resultsRes.data.length > 0) {
+    // Fallback: list from ML results if alerts have not yet been backfilled
+    formattedAlerts = resultsRes.data.map((r: any) => ({
+      id: r.entityId,
+      entityId: r.entityId,
+      entityLabel:
+        r.entityId.length > 16
+          ? `${r.entityId.slice(0, 8)}…${r.entityId.slice(-6)}`
+          : r.entityId,
+      entityType: (r.entityType === "address" ? "wallet" : r.entityType) as EntityType,
+      riskScore: Math.round(r.riskScore * 100),
+      severity: (r.riskLevel?.toLowerCase() as Severity) || "low",
+      reason:
+        r.predictionLabel ||
+        `${r.riskLevel.toUpperCase()} risk anomaly flagged by ML (${r.modelId})`,
+      timestamp: r.predictedAt,
+      status: "new",
+    }))
+  }
+
+  // 7. Compile behaviors from this analysis context
+  const results = resultsRes?.data || []
+  const behaviors = compileBehaviorTypologies(results, txs)
+
+  return {
+    hasDataset: true,
+    datasetId,
+    analysisId,
+    stats,
+    alerts: formattedAlerts,
+    behaviors,
+  }
+}
+
+/**
+ * Aggregates dashboard statistics from live datasets and analysis runs.
+ */
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const snapshot = await loadDashboardSnapshot()
+  return snapshot.stats
 }
 
 /**

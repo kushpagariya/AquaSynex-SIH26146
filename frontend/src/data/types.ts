@@ -399,3 +399,11 @@ export interface DatasetProfile {
   scoringStatus: { scoredCount: number; totalCount: number; status: string }
 }
 
+export interface DashboardSnapshot {
+  hasDataset: boolean
+  datasetId?: string
+  analysisId?: string
+  stats: DashboardStats
+  alerts: Alert[]
+  behaviors: BehaviorAnalyticsItem[]
+}

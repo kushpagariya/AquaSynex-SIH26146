@@ -42,11 +42,13 @@ export function NetworkMapPage() {
     setSelectedPoint(pt)
   }, [])
 
-  function loadData() {
+  const loadData = useCallback(() => {
+    let isCurrent = true
     setLoading(true)
     setErrorMsg(null)
     getNetworkMapData()
       .then((res) => {
+        if (!isCurrent) return
         setData(res)
         if (res && res.points.length > 0) {
           // Select first mapped point by default if available
@@ -56,14 +58,19 @@ export function NetworkMapPage() {
         setLoading(false)
       })
       .catch((err) => {
+        if (!isCurrent) return
         setErrorMsg(err instanceof Error ? err.message : "Failed to load network intelligence map data")
         setLoading(false)
       })
-  }
+
+    return () => {
+      isCurrent = false
+    }
+  }, [])
 
   useEffect(() => {
-    loadData()
-  }, [])
+    return loadData()
+  }, [loadData])
 
   // Derived filter options from actual data
   const availableCountries = useMemo(() => {
