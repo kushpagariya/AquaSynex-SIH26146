@@ -117,6 +117,10 @@ class PipelineService:
                 for item in ml_results:
                     self._persist_result(dataset_id, analysis_id, model_id, model_version, item)
                 self.conn.execute("COMMIT")
+                try:
+                    self.conn.execute("CHECKPOINT")
+                except Exception:
+                    pass
             except Exception as exc:
                 self.conn.execute("ROLLBACK")
                 logger.error(f"Failed to persist ML results for analysis {analysis_id}: {exc}")

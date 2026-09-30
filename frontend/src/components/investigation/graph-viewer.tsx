@@ -5,19 +5,20 @@ import type { GraphData, EntityType, Severity } from "@/data/types"
 import { cn } from "@/lib/utils"
 
 const typeColor: Record<EntityType, string> = {
-  wallet: "#38bdf8",
-  transaction: "#a78bfa",
-  ip: "#f59e0b",
-  network: "#f59e0b",
-  exchange: "#22c55e",
-  mixer: "#ef4444",
+  wallet: "#475569", // slate charcoal
+  transaction: "#173B63", // deep navy
+  ip: "#A46A16", // muted amber
+  network: "#A46A16", // muted amber
+  exchange: "#2F6B4F", // muted green
+  mixer: "#A63D3D", // muted red
+  cluster: "#6366F1", // indigo
 }
 
 const severityColor: Record<Severity, string> = {
-  low: "#22c55e",
-  medium: "#f59e0b",
-  high: "#f97316",
-  critical: "#ef4444",
+  low: "#2F6B4F",
+  medium: "#A46A16",
+  high: "#B85D1B",
+  critical: "#A63D3D",
 }
 
 export interface GraphSelection {
@@ -46,8 +47,8 @@ export function GraphViewer({
       data: {
         id: n.id,
         label: n.label,
-        color: n.severity ? severityColor[n.severity] : typeColor[n.type],
-        typeColor: typeColor[n.type],
+        color: n.severity ? severityColor[n.severity] : typeColor[n.type] || "#475569",
+        typeColor: typeColor[n.type] || "#475569",
         isFocus: n.isFocus ? 1 : 0,
         shape: n.type === "transaction" ? "round-rectangle" : "ellipse",
       },
@@ -76,76 +77,82 @@ export function GraphViewer({
           style: {
             "background-color": "data(color)",
             label: "data(label)",
-            color: "#e6edf3",
+            color: "#171717",
             "font-size": "10px",
-            "font-family": "JetBrains Mono, monospace",
+            "font-family": "Inter, sans-serif",
             "text-valign": "bottom",
-            "text-margin-y": 6,
-            "text-outline-color": "#0b0f14",
+            "text-margin-y": 5,
+            "text-outline-color": "#FFFFFF",
             "text-outline-width": 2,
-            width: 34,
-            height: 34,
-            "border-width": 2,
-            "border-color": "#0b0f14",
+            width: 32,
+            height: 32,
+            "border-width": 1.5,
+            "border-color": "#FFFFFF",
             shape: "data(shape)" as never,
           },
         },
         {
           selector: "node[isFocus = 1]",
           style: {
-            width: 52,
-            height: 52,
-            "border-width": 3,
-            "border-color": "#38bdf8",
+            width: 46,
+            height: 46,
+            "border-width": 2.5,
+            "border-color": "#173B63",
             "font-size": "11px",
+            "font-weight": "bold",
           },
         },
         {
           selector: "edge",
           style: {
             width: 1.5,
-            "line-color": "#26313d",
-            "target-arrow-color": "#26313d",
+            "line-color": "#CBD5E1",
+            "target-arrow-color": "#CBD5E1",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
             "arrow-scale": 0.8,
             label: "data(label)",
-            "font-size": "8px",
+            "font-size": "9px",
             "font-family": "JetBrains Mono, monospace",
-            color: "#64748b",
+            color: "#64748B",
             "text-rotation": "autorotate",
-            "text-background-color": "#0b0f14",
-            "text-background-opacity": 1,
+            "text-background-color": "#FFFFFF",
+            "text-background-opacity": 0.9,
             "text-background-padding": "2px",
           },
         },
         {
           selector: "edge[suspicious = 1]",
           style: {
-            "line-color": "#f97316",
-            "target-arrow-color": "#f97316",
+            "line-color": "#B85D1B",
+            "target-arrow-color": "#B85D1B",
             width: 2,
           },
         },
         {
           selector: ".faded",
-          style: { opacity: 0.15 },
+          style: { opacity: 0.2 },
         },
         {
           selector: ".highlight",
-          style: { "border-color": "#38bdf8", "border-width": 3 },
+          style: {
+            "border-color": "#173B63",
+            "border-width": 3,
+            "line-color": "#173B63",
+            "target-arrow-color": "#173B63",
+          },
         },
       ],
       layout: {
         name: "cose",
         animate: false,
         padding: 30,
-        nodeRepulsion: () => 12000,
-        idealEdgeLength: () => 90,
+        nodeRepulsion: () => 10000,
+        idealEdgeLength: () => 80,
       } as never,
-      minZoom: 0.3,
+      minZoom: 0.25,
       maxZoom: 2.5,
-      wheelSensitivity: 0.2,
+      wheelSensitivity: 0.25,
     })
 
     cyRef.current = cy
@@ -167,7 +174,7 @@ export function GraphViewer({
           label: raw.label,
           type: raw.type,
           severity: raw.severity,
-          neighbors: node.neighborhood("node").length,
+          neighbors: hood.nodes().length - 1,
         })
       }
     })
@@ -175,8 +182,8 @@ export function GraphViewer({
     cy.on("tap", (evt) => {
       if (evt.target === cy) {
         setSelectedId(null)
-        cy.elements().removeClass("faded highlight")
-        onSelect?.(null)
+        cy.elements().removeClass("faded").removeClass("highlight")
+        if (onSelect) onSelect(null)
       }
     })
 
@@ -184,69 +191,42 @@ export function GraphViewer({
       cy.destroy()
       cyRef.current = null
     }
-  }, [elements, data.nodes, onSelect])
-
-  function zoomBy(factor: number) {
-    const cy = cyRef.current
-    if (!cy) return
-    cy.zoom({ level: cy.zoom() * factor, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } })
-  }
-
-  function fit() {
-    cyRef.current?.fit(undefined, 40)
-  }
+  }, [elements, data, onSelect])
 
   return (
-    <div className={cn("relative h-full w-full", className)}>
-      <div ref={containerRef} className="panel-grid h-full w-full" />
-
-      <div className="absolute right-3 top-3 flex flex-col gap-1.5">
-        <GraphButton label="Zoom in" onClick={() => zoomBy(1.25)}>
-          <Plus className="size-4" />
-        </GraphButton>
-        <GraphButton label="Zoom out" onClick={() => zoomBy(0.8)}>
-          <Minus className="size-4" />
-        </GraphButton>
-        <GraphButton label="Fit to view" onClick={fit}>
-          <Maximize2 className="size-4" />
-        </GraphButton>
-      </div>
-
-      {selectedId ? (
+    <div
+      className={cn(
+        "relative h-96 w-full overflow-hidden rounded-lg border border-line bg-[#F8F9FA]",
+        className,
+      )}
+    >
+      <div ref={containerRef} className="h-full w-full" />
+      <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded border border-line bg-panel p-1 shadow-sm">
         <button
           type="button"
-          onClick={() => {
-            cyRef.current?.elements().removeClass("faded highlight")
-            setSelectedId(null)
-            onSelect?.(null)
-          }}
-          className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded border border-line bg-panel/90 px-2.5 py-1.5 text-xs text-fg-muted backdrop-blur hover:text-accent"
+          onClick={() => cyRef.current?.zoom(cyRef.current.zoom() * 1.2)}
+          className="rounded p-1 text-fg-muted hover:bg-panel-2 hover:text-fg"
+          aria-label="Zoom in"
+        >
+          <Plus className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => cyRef.current?.zoom(cyRef.current.zoom() * 0.8)}
+          className="rounded p-1 text-fg-muted hover:bg-panel-2 hover:text-fg"
+          aria-label="Zoom out"
+        >
+          <Minus className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => cyRef.current?.fit(undefined, 30)}
+          className="rounded p-1 text-fg-muted hover:bg-panel-2 hover:text-fg"
+          aria-label="Reset view"
         >
           <Crosshair className="size-3.5" />
-          Clear selection
         </button>
-      ) : null}
+      </div>
     </div>
-  )
-}
-
-function GraphButton({
-  children,
-  label,
-  onClick,
-}: {
-  children: React.ReactNode
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className="grid size-8 place-items-center rounded border border-line bg-panel/90 text-fg-muted backdrop-blur transition-colors hover:border-accent/50 hover:text-accent"
-    >
-      {children}
-    </button>
   )
 }

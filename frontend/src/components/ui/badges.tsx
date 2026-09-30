@@ -2,17 +2,17 @@ import { cn } from "@/lib/utils"
 import type { AlertStatus, EntityType, Severity } from "@/data/types"
 
 const severityStyles: Record<Severity, string> = {
-  low: "text-risk-low bg-risk-low-soft border-risk-low/30",
-  medium: "text-risk-medium bg-risk-medium-soft border-risk-medium/30",
-  high: "text-risk-high bg-risk-high-soft border-risk-high/30",
-  critical: "text-risk-critical bg-risk-critical-soft border-risk-critical/40",
+  low: "text-[#2F6B4F] bg-[#EAF3EE] border-[#C5DECF]",
+  medium: "text-[#A46A16] bg-[#FDF6E2] border-[#F2DF99]",
+  high: "text-[#B85D1B] bg-[#FDF0E6] border-[#F6CCA9]",
+  critical: "text-[#A63D3D] bg-[#FDF0F0] border-[#F4BCBC]",
 }
 
 const severityDot: Record<Severity, string> = {
-  low: "bg-risk-low",
-  medium: "bg-risk-medium",
-  high: "bg-risk-high",
-  critical: "bg-risk-critical",
+  low: "bg-[#2F6B4F]",
+  medium: "bg-[#A46A16]",
+  high: "bg-[#B85D1B]",
+  critical: "bg-[#A63D3D]",
 }
 
 export function SeverityBadge({
@@ -25,7 +25,7 @@ export function SeverityBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+        "inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
         severityStyles[severity],
         className,
       )}
@@ -37,10 +37,21 @@ export function SeverityBadge({
 }
 
 export function severityColorVar(severity: Severity): string {
-  return `var(--color-risk-${severity})`
+  switch (severity) {
+    case "low":
+      return "#2F6B4F"
+    case "medium":
+      return "#A46A16"
+    case "high":
+      return "#B85D1B"
+    case "critical":
+      return "#A63D3D"
+    default:
+      return "#666666"
+  }
 }
 
-/** Numeric risk score with a colored ring, sized sm | md | lg. */
+/** Numeric risk score with restrained institutional indicator */
 export function RiskScore({
   score,
   severity,
@@ -54,22 +65,22 @@ export function RiskScore({
 }) {
   const dims =
     size === "lg"
-      ? "size-24 text-3xl"
+      ? "size-20 text-2xl"
       : size === "sm"
-        ? "size-10 text-sm"
-        : "size-16 text-xl"
+        ? "size-9 text-xs"
+        : "size-14 text-lg"
 
   const color = severityColorVar(severity)
 
   return (
     <div
       className={cn(
-        "relative grid place-items-center rounded-full font-mono-id font-semibold tabular-nums",
+        "relative grid place-items-center rounded-full font-mono font-semibold tabular-nums",
         dims,
         className,
       )}
       style={{
-        background: `conic-gradient(${color} ${score * 3.6}deg, var(--color-line) 0deg)`,
+        background: `conic-gradient(${color} ${score * 3.6}deg, #E5E5E5 0deg)`,
       }}
       role="img"
       aria-label={`Risk score ${score} of 100, ${severity}`}
@@ -82,10 +93,12 @@ export function RiskScore({
 }
 
 const statusStyles: Record<AlertStatus, string> = {
-  new: "text-accent bg-accent-soft border-accent/30",
-  reviewing: "text-risk-medium bg-risk-medium-soft border-risk-medium/30",
-  escalated: "text-risk-high bg-risk-high-soft border-risk-high/30",
-  resolved: "text-risk-low bg-risk-low-soft border-risk-low/30",
+  new: "text-accent bg-accent-soft border-accent/20",
+  acknowledged: "text-[#2B6CB0] bg-[#EBF8FF] border-[#BEE3F8]",
+  reviewing: "text-[#A46A16] bg-[#FDF6E2] border-[#F2DF99]",
+  investigating: "text-[#7C3AED] bg-[#F5F3FF] border-[#DDD6FE]",
+  escalated: "text-[#B85D1B] bg-[#FDF0E6] border-[#F6CCA9]",
+  resolved: "text-[#2F6B4F] bg-[#EAF3EE] border-[#C5DECF]",
   dismissed: "text-fg-subtle bg-panel-2 border-line",
 }
 
@@ -99,8 +112,8 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium capitalize",
-        statusStyles[status],
+        "inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider capitalize",
+        statusStyles[status] || statusStyles.new,
         className,
       )}
     >
@@ -109,13 +122,35 @@ export function StatusBadge({
   )
 }
 
-const entityTypeLabel: Record<EntityType, string> = {
-  wallet: "Wallet",
-  transaction: "Transaction",
-  ip: "IP",
-  network: "Network",
-  exchange: "Exchange",
-  mixer: "Mixer",
+export function AlertTypeBadge({
+  type,
+  className,
+}: {
+  type?: string
+  className?: string
+}) {
+  if (!type) return null
+  const formatted = type.replace(/_/g, " ")
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded border border-line bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] font-medium text-fg-muted uppercase tracking-wider",
+        className,
+      )}
+    >
+      {formatted}
+    </span>
+  )
+}
+
+const entityStyles: Record<EntityType, string> = {
+  transaction: "text-accent bg-accent-soft border-accent/20",
+  wallet: "text-fg-muted bg-panel-2 border-line",
+  exchange: "text-[#2F6B4F] bg-[#EAF3EE] border-[#C5DECF]",
+  mixer: "text-[#A63D3D] bg-[#FDF0F0] border-[#F4BCBC]",
+  ip: "text-[#A46A16] bg-[#FDF6E2] border-[#F2DF99]",
+  network: "text-[#60758C] bg-panel-2 border-line",
+  cluster: "text-[#4338CA] bg-[#EEF2FF] border-[#C7D2FE]",
 }
 
 export function EntityTypeBadge({
@@ -128,11 +163,12 @@ export function EntityTypeBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded border border-line bg-panel-2 px-2 py-0.5 text-[11px] font-medium text-fg-muted",
+        "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+        entityStyles[type] || "text-fg-muted bg-panel-2 border-line",
         className,
       )}
     >
-      {entityTypeLabel[type]}
+      {type}
     </span>
   )
 }

@@ -247,6 +247,19 @@ class DataNormalizationEngine:
                     "output_value_btc": int(amt) / SATOSHIS_PER_BTC
                 })
 
+            raw_asn = row.get("asn")
+            parsed_asn = None
+            if pd.notna(raw_asn):
+                s_asn = str(raw_asn).strip()
+                if s_asn.upper().startswith("AS"):
+                    s_asn = s_asn[2:].strip()
+                try:
+                    num_asn = int(s_asn)
+                    if num_asn > 0:
+                        parsed_asn = num_asn
+                except (ValueError, TypeError):
+                    parsed_asn = None
+
             net_rows.append({
                 "event_id": f"EVT_{txid[:16]}",
                 "transaction_id": txid,
@@ -259,14 +272,18 @@ class DataNormalizationEngine:
                 "dst_ip": str(row["dst_ip"]).strip(),
                 "dst_port": int(row["dst_port"]),
                 "country": str(row["country"]).strip().upper(),
-                "asn": int(row["asn"])
+                "asn": parsed_asn
             })
+
+        df_net = pd.DataFrame(net_rows)
+        if not df_net.empty and "asn" in df_net.columns:
+            df_net["asn"] = df_net["asn"].astype("Int64")
 
         return {
             "transactions": pd.DataFrame(tx_rows),
             "transaction_inputs": pd.DataFrame(in_rows),
             "transaction_outputs": pd.DataFrame(out_rows),
-            "network_events": pd.DataFrame(net_rows)
+            "network_events": df_net
         }
 
     def export_to_parquet(

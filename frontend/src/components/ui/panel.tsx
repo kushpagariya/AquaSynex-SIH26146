@@ -11,7 +11,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        "rounded-[var(--radius-panel)] border border-line bg-panel",
+        "rounded-lg border border-line bg-panel shadow-sm shadow-black/[0.02]",
         className,
       )}
     >
@@ -36,16 +36,16 @@ export function PanelHeader({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 border-b border-line px-4 py-3",
+        "flex items-center justify-between gap-3 border-b border-line px-5 py-3.5",
         className,
       )}
     >
       <div className="flex min-w-0 items-center gap-2.5">
-        {icon ? <span className="text-fg-subtle">{icon}</span> : null}
+        {icon ? <span className="text-fg-muted">{icon}</span> : null}
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-fg">{title}</h2>
+          <h2 className="truncate text-xs font-semibold uppercase tracking-wider text-fg font-sans">{title}</h2>
           {subtitle ? (
-            <p className="truncate text-xs text-fg-subtle">{subtitle}</p>
+            <p className="truncate text-xs text-fg-muted">{subtitle}</p>
           ) : null}
         </div>
       </div>
@@ -61,5 +61,5 @@ export function PanelBody({
   children: ReactNode
   className?: string
 }) {
-  return <div className={cn("p-4", className)}>{children}</div>
+  return <div className={cn("p-5", className)}>{children}</div>
 }

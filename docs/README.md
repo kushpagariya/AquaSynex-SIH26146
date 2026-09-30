@@ -197,6 +197,7 @@ Documentation finalized
 
 | Document | Purpose |
 |---|---|
+| [current-state-project-context.md](./current-state-project-context.md) | **Authoritative** current-state project context, verified implementation blueprint & ground truth |
 | [system-architecture.md](./architecture/system-architecture.md) | Complete system architecture with component detail |
 | [system-context.md](./architecture/system-context.md) | External context, actors, and system boundaries |
 | [component-responsibilities.md](./architecture/component-responsibilities.md) | Component responsibility matrix |

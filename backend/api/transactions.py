@@ -26,6 +26,9 @@ def list_transactions(
     minValueBtc: Optional[str] = Query(default=None, description="Minimum total value in BTC decimal string"),
     maxValueBtc: Optional[str] = Query(default=None, description="Maximum total value in BTC decimal string"),
     analysisId: Optional[str] = Query(default=None, description="Filter to ML results from this analysis"),
+    ip: Optional[str] = Query(default=None, description="Filter transactions associated with an IP address"),
+    address: Optional[str] = Query(default=None, description="Filter transactions involving a Bitcoin address"),
+    txid: Optional[str] = Query(default=None, description="Filter to a specific transaction ID"),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ) -> ApiResponse[List[TransactionSummary]]:
     """List transactions in a dataset with filtering, risk scores, and pagination."""
@@ -43,6 +46,9 @@ def list_transactions(
         min_value_btc=minValueBtc,
         max_value_btc=maxValueBtc,
         analysis_id=analysisId,
+        ip=ip,
+        address=address,
+        txid=txid,
     )
     return ApiResponse(
         success=True,

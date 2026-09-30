@@ -19,8 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
-
+RUN pip install --no-cache-dir \
+    --default-timeout=1000 \
+    --retries=10 \
+    -r /app/backend/requirements.txt
 # Copy required source directories and model artifacts
 COPY backend /app/backend
 COPY ml /app/ml

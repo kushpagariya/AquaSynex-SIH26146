@@ -64,9 +64,9 @@ export function GlobalSearch() {
   }
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-xl">
-      <div className="flex items-center gap-2.5 rounded-md border border-line bg-panel-2 px-3 py-2 focus-within:border-accent/50">
-        <Search className="size-4 shrink-0 text-fg-subtle" />
+    <div ref={containerRef} className="relative w-full max-w-sm">
+      <div className="flex items-center gap-2 rounded border border-[#2A2A2A] bg-[#161616] px-2.5 py-1 focus-within:border-[#444] focus-within:bg-[#1A1A1A] transition-colors">
+        <Search className="size-3.5 shrink-0 text-neutral-400" />
         <input
           value={query}
           onChange={(e) => {
@@ -75,24 +75,24 @@ export function GlobalSearch() {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search address, TXID, or IP / network entity…"
-          className="w-full bg-transparent font-mono-id text-sm text-fg placeholder:font-sans placeholder:text-fg-subtle focus:outline-none"
+          placeholder="Search address, TXID, IP..."
+          className="w-full bg-transparent text-xs text-neutral-200 placeholder:text-neutral-400 focus:outline-none font-sans"
           aria-label="Global search"
         />
-        <kbd className="hidden items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-fg-subtle sm:flex">
-          <CornerDownLeft className="size-3" /> to open
+        <kbd className="hidden items-center gap-0.5 rounded border border-[#2E2E2E] bg-[#222] px-1 py-0.5 text-[9px] text-neutral-400 sm:flex font-mono">
+          <CornerDownLeft className="size-2.5" />
         </kbd>
       </div>
 
       {open && query.trim() ? (
-        <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-md border border-line bg-panel shadow-xl shadow-black/40">
+        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded border border-line bg-panel shadow-lg shadow-black/5">
           {results.length === 0 ? (
-            <p className="px-3 py-4 text-sm text-fg-subtle">
-              No matches for{" "}
-              <span className="font-mono-id text-fg-muted">{query}</span>
+            <p className="px-3 py-3 text-xs text-fg-subtle">
+              No matches found for{" "}
+              <span className="font-mono text-fg-muted font-medium">{query}</span>
             </p>
           ) : (
-            <ul>
+            <ul className="divide-y divide-line-soft">
               {results.map((r, i) => (
                 <li key={`${r.kind}-${r.id}`}>
                   <button
@@ -100,17 +100,15 @@ export function GlobalSearch() {
                     onMouseEnter={() => setActive(i)}
                     onClick={() => go(r)}
                     className={cn(
-                      "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left",
-                      i === active ? "bg-accent-soft" : "hover:bg-panel-2",
+                      "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
+                      i === active ? "bg-accent-soft text-accent" : "hover:bg-panel-2 text-fg",
                     )}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-fg">{r.label}</p>
-                      <p className="truncate font-mono-id text-xs text-fg-subtle">
-                        {r.sublabel}
-                      </p>
+                      <p className="truncate font-mono">{r.label}</p>
+                      <p className="truncate text-[10px] text-fg-subtle">{r.sublabel}</p>
                     </div>
-                    <span className="shrink-0 rounded border border-line bg-panel-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-subtle">
+                    <span className="shrink-0 rounded border border-line bg-panel px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-fg-subtle">
                       {r.kind}
                     </span>
                   </button>

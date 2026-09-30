@@ -96,13 +96,26 @@ class ThreadSafeConnection:
         self._conn = conn
         self._lock = lock
         self.generation = generation
+        self._in_transaction = False
 
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         with self._lock:
-            res = self._conn.execute(*args, **kwargs)
-            if res is self._conn:
+            q = (args[0] if args else "").strip().upper()
+            if q.startswith("BEGIN") or q.startswith("START TRANSACTION"):
+                self._in_transaction = True
+                self._conn.execute(*args, **kwargs)
                 return self
-            return ThreadSafeRelation(res, self._lock)
+            elif q.startswith("COMMIT") or q.startswith("ROLLBACK"):
+                self._in_transaction = False
+                self._conn.execute(*args, **kwargs)
+                return self
+            elif self._in_transaction:
+                self._conn.execute(*args, **kwargs)
+                return ThreadSafeRelation(self._conn, self._lock)
+            else:
+                cur = self._conn.cursor()
+                cur.execute(*args, **kwargs)
+                return ThreadSafeRelation(cur, self._lock)
 
     def cursor(self) -> "ThreadSafeConnection":
         with self._lock:
@@ -110,14 +123,17 @@ class ThreadSafeConnection:
 
     def begin(self) -> Any:
         with self._lock:
+            self._in_transaction = True
             return self._conn.begin()
 
     def commit(self) -> Any:
         with self._lock:
+            self._in_transaction = False
             return self._conn.commit()
 
     def rollback(self) -> Any:
         with self._lock:
+            self._in_transaction = False
             return self._conn.rollback()
 
     def close(self) -> None:

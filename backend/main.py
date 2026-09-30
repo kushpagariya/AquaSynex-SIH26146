@@ -14,11 +14,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from backend.api.addresses import router as addresses_router
+from backend.api.alerts import router as alerts_router
 from backend.api.analyses import router as analyses_router
 from backend.api.datasets import router as datasets_router
 from backend.api.graph import router as graph_router
 from backend.api.health import router as health_router
 from backend.api.models import router as models_router
+from backend.api.network import router as network_router
 from backend.api.results import router as results_router
 from backend.api.transactions import router as transactions_router
 from backend.config import settings
@@ -193,8 +195,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(health_router, prefix="/api")
 app.include_router(datasets_router, prefix="/api")
 app.include_router(analyses_router, prefix="/api")
+app.include_router(alerts_router, prefix="/api")
 app.include_router(transactions_router, prefix="/api")
 app.include_router(addresses_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(results_router, prefix="/api")
 app.include_router(models_router, prefix="/api")
+app.include_router(network_router, prefix="/api")

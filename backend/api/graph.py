@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from backend.dependencies import get_graph_service
 from backend.schemas.common import ApiMeta, ApiResponse
-from backend.schemas.graph import GraphExport
+from backend.schemas.graph import GraphExport, GraphNeighborhoodResponse
 from backend.services.graph_service import GraphService
 
 
@@ -49,5 +49,31 @@ def get_address_subgraph(
     return ApiResponse(
         success=True,
         data=GraphExport(**graph_data),
+        meta=ApiMeta(),
+    )
+
+
+@router.get("/graph/neighborhood", response_model=ApiResponse[GraphNeighborhoodResponse])
+def get_graph_neighborhood(
+    entityId: str = Query(..., description="Target transaction ID or address"),
+    analysisId: Optional[str] = Query(default=None, description="Analysis ID for context"),
+    datasetId: Optional[str] = Query(default=None, description="Dataset ID for context"),
+    entityType: Optional[str] = Query(default=None, description="Optional entity type hint ('transaction' or 'address')"),
+    depth: int = Query(default=2, ge=1, le=3, description="Expansion depth (1-3 hops)"),
+    highRiskOnly: bool = Query(default=False, description="Filter to high-risk entities (risk_score >= 0.50)"),
+    graph_service: GraphService = Depends(get_graph_service),
+) -> ApiResponse[GraphNeighborhoodResponse]:
+    """Return the multi-hop bipartite neighborhood subgraph around a transaction or address."""
+    graph_data = graph_service.get_neighborhood(
+        entity_id=entityId,
+        analysis_id=analysisId,
+        dataset_id=datasetId,
+        entity_type=entityType,
+        depth=depth,
+        high_risk_only=highRiskOnly,
+    )
+    return ApiResponse(
+        success=True,
+        data=GraphNeighborhoodResponse(**graph_data),
         meta=ApiMeta(),
     )

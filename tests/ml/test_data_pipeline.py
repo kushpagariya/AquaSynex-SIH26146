@@ -135,6 +135,18 @@ class TestDataPipeline(unittest.TestCase):
         self.assertFalse(result.is_valid)
         self.assertTrue(any("invalid 64-char hex" in e.lower() for e in result.errors))
 
+    def test_validation_detects_invalid_asn(self):
+        validator = DataValidationEngine()
+        corrupt_net = self.mock_network.drop(columns=["has_network_anomaly"]).copy()
+        corrupt_net["asn"] = 0
+        observational = {
+            "transactions": self.mock_transactions.drop(columns=["scenario_id"]),
+            "network_events": corrupt_net
+        }
+        result = validator.validate(observational)
+        self.assertFalse(result.is_valid)
+        self.assertTrue(any("asn" in e.lower() for e in result.errors))
+
     def test_cleaning_engine_deduplication(self):
         cleaner = DataCleaningEngine()
         # Duplicate transaction row

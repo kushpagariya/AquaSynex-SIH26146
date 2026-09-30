@@ -146,6 +146,24 @@ export interface NodeMetadata {
   firstSeen?: string
   lastSeen?: string
   activeDays?: number
+  amountBtc?: string
+  feeBtc?: string
+  inputCount?: number
+  outputCount?: number
+  timestamp?: string
+  blockHeight?: number
+  feeRate?: number
+  behavior?: string
+  riskScore?: number
+  riskLevel?: string
+  evidence?: {
+    graph?: Record<string, any>
+    temporal?: Record<string, any>
+    network?: Record<string, any>
+    ml?: Record<string, any>
+  }
+  alerts?: Record<string, any>[]
+  [key: string]: any
 }
 
 export interface GraphNodeDto {
@@ -154,7 +172,9 @@ export interface GraphNodeDto {
   nodeType: string
   riskScore?: number
   riskLevel?: string
+  behaviorType?: string
   metadata?: NodeMetadata
+  alerts?: Record<string, any>[]
 }
 
 export interface GraphEdgeTransactionDto {
@@ -186,6 +206,33 @@ export interface GraphExport {
   subgraphCenter?: string
   nodes: GraphNodeDto[]
   edges: GraphEdgeDto[]
+}
+
+export interface SelectedEntityInfo {
+  entityId: string
+  entityType: string
+  label?: string
+  exists: boolean
+  riskScore?: number
+  riskLevel?: string
+  behaviorType?: string
+  metadata?: Record<string, unknown>
+  alerts?: Record<string, unknown>[]
+}
+
+export interface GraphSummary {
+  nodeCount: number
+  edgeCount: number
+  depth: number
+  highRiskOnly: boolean
+  addressCount: number
+  transactionCount: number
+  clusterCount: number
+}
+
+export interface GraphNeighborhoodResponse extends GraphExport {
+  selectedEntity?: SelectedEntityInfo
+  summary?: GraphSummary
 }
 
 export interface FeatureExplanationSchema {
@@ -255,3 +302,87 @@ export interface HealthResponse {
   uptime?: number
   timestamp?: string
 }
+
+export interface AlertDTO {
+  alertId: string
+  analysisId: string
+  datasetId: string
+  fingerprint: string
+  groupingKey: string
+  transactionId?: string | null
+  entityId: string
+  entityType: string
+  alertType: string
+  severity: string
+  priority: string
+  riskScore: number
+  behaviorType?: string | null
+  triggerSource: string
+  triggerReason: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  firstSeenAt?: string | null
+  lastSeenAt?: string | null
+  acknowledgedAt?: string | null
+  resolvedAt?: string | null
+  assignedTo?: string | null
+  metadataJson?: Record<string, unknown> | null
+}
+
+export type AlertItemDto = AlertDTO
+
+export interface AlertsSummaryDTO {
+  total: number
+  active: number
+  bySeverity: Record<string, number>
+  byStatus: Record<string, number>
+  byType: Record<string, number>
+}
+
+// ── Network Intelligence & Offline GeoIP/ASN Map ─────────────
+
+export interface NetworkMapPoint {
+  ip: string
+  country?: string | null
+  countryCode?: string | null
+  region?: string | null
+  city?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  asn?: string | null
+  asName?: string | null
+  asDomain?: string | null
+  eventCount: number
+  transactionCount: number
+  sourceEventCount: number
+  destinationEventCount: number
+  firstSeen?: string | null
+  lastSeen?: string | null
+  isMapped: boolean
+}
+
+export interface NetworkMapMetrics {
+  totalIps: number
+  mappedIps: number
+  unmappedIps: number
+  uniqueCountries: number
+  uniqueAsns: number
+  totalEvents: number
+}
+
+export interface NetworkMapEdge {
+  srcIp: string
+  dstIp: string
+  eventCount: number
+  transactionCount: number
+}
+
+export interface NetworkMapResponse {
+  datasetId: string
+  analysisId?: string | null
+  metrics: NetworkMapMetrics
+  points: NetworkMapPoint[]
+  edges: NetworkMapEdge[]
+}
+

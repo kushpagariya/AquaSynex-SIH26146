@@ -15,11 +15,11 @@ services:
     volumes:
       - aquasynex_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
-      interval: 5s
-      timeout: 5s
+      test: [ "CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1" ]
+      interval: 30s
+      timeout: 30s
       retries: 5
-      start_period: 5s
+      start_period: 30s
 
   frontend:
     build:

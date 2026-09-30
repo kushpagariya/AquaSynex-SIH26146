@@ -27,6 +27,9 @@ class TransactionService:
         min_value_btc: Optional[str] = None,
         max_value_btc: Optional[str] = None,
         analysis_id: Optional[str] = None,
+        ip: Optional[str] = None,
+        address: Optional[str] = None,
+        txid: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """List transactions for a dataset with filters and pagination."""
         # Ensure dataset exists
@@ -47,6 +50,9 @@ class TransactionService:
             min_value_btc=min_value_btc,
             max_value_btc=max_value_btc,
             analysis_id=analysis_id,
+            ip=ip,
+            address=address,
+            txid=txid,
         )
 
     def get_transaction(

@@ -109,3 +109,22 @@ def is_model_available(model_id: str, model_version: Optional[str] = None) -> bo
             if model_version is None or m.model_version == model_version:
                 return True
     return False
+
+
+def get_model_metadata() -> dict:
+    """Retrieve persisted production model metadata from JSON artifact."""
+    import json
+    models_dir = Path(settings.MODELS_DIR)
+    meta_paths = [
+        models_dir / "model_metadata.json",
+        Path(__file__).resolve().parent.parent.parent / "models" / "model_metadata.json",
+    ]
+    for mp in meta_paths:
+        if mp.exists():
+            try:
+                with open(mp, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return {}
+

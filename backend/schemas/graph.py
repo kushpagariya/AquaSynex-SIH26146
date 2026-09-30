@@ -20,7 +20,9 @@ class GraphNode(CamelModel):
     node_type: str = "address"
     risk_score: Optional[float] = None
     risk_level: Optional[str] = None
-    metadata: Optional[NodeMetadata] = None
+    behavior_type: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    alerts: Optional[List[Dict[str, Any]]] = None
 
 
 class GraphEdgeTransaction(CamelModel):
@@ -36,9 +38,12 @@ class GraphEdge(CamelModel):
     target: str
     edge_type: str = "transaction"
     transactions: List[GraphEdgeTransaction] = []
-    total_value_btc: str
-    total_value_satoshi: int
-    transaction_count: int
+    total_value_btc: Optional[str] = "0.00000000"
+    total_value_satoshi: Optional[int] = 0
+    transaction_count: Optional[int] = 0
+    value_btc: Optional[str] = None
+    value_satoshi: Optional[int] = None
+    timestamp: Optional[str] = None
 
 
 class GraphExport(CamelModel):
@@ -52,3 +57,40 @@ class GraphExport(CamelModel):
     subgraph_center: Optional[str] = None
     nodes: List[GraphNode] = []
     edges: List[GraphEdge] = []
+
+
+class SelectedEntityInfo(CamelModel):
+    entity_id: str
+    entity_type: str
+    label: Optional[str] = None
+    exists: bool = True
+    risk_score: Optional[float] = None
+    risk_level: Optional[str] = None
+    behavior_type: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    alerts: Optional[List[Dict[str, Any]]] = None
+
+
+class GraphSummary(CamelModel):
+    node_count: int
+    edge_count: int
+    depth: int
+    high_risk_only: bool
+    address_count: int = 0
+    transaction_count: int = 0
+    cluster_count: int = 0
+
+
+class GraphNeighborhoodResponse(CamelModel):
+    graph_id: str
+    analysis_id: Optional[str] = None
+    dataset_id: str
+    generated_at: str
+    selected_entity: SelectedEntityInfo
+    summary: GraphSummary
+    nodes: List[GraphNode] = []
+    edges: List[GraphEdge] = []
+    is_subgraph: bool = True
+    subgraph_center: Optional[str] = None
+    node_count: Optional[int] = None
+    edge_count: Optional[int] = None

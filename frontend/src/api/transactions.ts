@@ -14,6 +14,9 @@ export interface ListTransactionsParams {
   minValueBtc?: string
   maxValueBtc?: string
   analysisId?: string
+  ip?: string
+  address?: string
+  txid?: string
 }
 
 export function listTransactions(
